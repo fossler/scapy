@@ -959,6 +959,16 @@ assert(rec_fin.mac == b'\xecguD\xa8\x87$<7+\n\x94\x1e9\x96\xfa')
 assert(isinstance(rec_fin.msg[0], _TLSEncryptedContent))
 rec_fin.msg[0].load == b'7\\)`\xaa`\x7ff\xcd\x10\xa9v\xa3*\x17\x1a'
 
+= Reading TLS test session - Full TLSNewSessionTicket captured
+import os
+tmp = "/test/pcaps/tls_new-session-ticket.pcap"
+filename = os.path.abspath(os.path.join(os.path.dirname(__file__),"../")) + tmp
+filename = os.getenv("SCAPY_ROOT_DIR")+tmp if not os.path.exists(filename) else filename
+a = rdpcap(filename)
+pkt = a[4]
+assert isinstance(pkt[TLS].msg[0], TLSNewSessionTicket)
+assert pkt[TLS].msg[0].ticket == b'6k\x8b{\xa8\xaf\xf0\x8aG*\xdd\xc2\xf6\t\xde\xc9y\t\x1d\xdb\xd55!\x91\x1f+\x1a\xa1@\xfe/\x90\xba\x98\xc5\xb3\xe8>y\xae\xda\xc3@\x184\xf6\x1f\xbc{|\xe87\xfe>\xba\\\x1d\x11\x00\xe6\xb9\xf6[,X\x0e\xe0jY\xa8\xfa\x07!1\xb8\x82\xbe\xa6aK\xa7\xad;(\x91^\xb9\xd3a\xa5\xfb%\xda\x10f\xfe\xf9\xc8\xf4\xc6z\xa7d\xa5\x89\x82IZ\xdc3\xa0{\x8c\x1c"\xd5w\x8e\x07\xa0G\xc6\xa7\x0c\xf3<:\x82c\x8a\xeb\x14("\xc4\x9bLS\xc1\x9f\xd7\xa09\xe8,\xe4*i\xf3\x9b\xbb\xb5\x98\xc9*EQ\x1e\xf4\xf7\xb05\xbaby\xa0\xceW\x87\x903\x193\xe3\xfb\xaf\xe82U\xbd\xe7t\xd0\xa4T\xe4\xd8\xe6\xdbd!\xf9'
+assert pkt[TLS].msg[0].lifetime == 3600
 
 = Reading TLS test session - ApplicationData
 t7 = TLS(p7_data, tls_session=t6.tls_session.mirror())
@@ -988,8 +998,10 @@ assert isinstance(_TLSMsgListField.m2i(_TLSMsgListField("", []), TLS(type=0), '\
 
 = Reading TLS vulnerable session - Decrypt data from using a compromised server key
 import os
-basedir = os.path.abspath(os.path.join(os.path.dirname(__file__),"../"))
-key = PrivKeyRSA(basedir + "/test/tls/pki/srv_key.pem")
+tmp = "/test/tls/pki/srv_key.pem"
+filename = os.path.abspath(os.path.join(os.path.dirname(__file__),"../")) + tmp
+filename = os.getenv("SCAPY_ROOT_DIR")+tmp if not os.path.exists(filename) else filename
+key = PrivKeyRSA(filename)
 ch = b'\x16\x03\x01\x005\x01\x00\x001\x03\x01X\xac\x0e\x8c\xe46\xe9\xedo\xda\x085$M\xae$\x90\xd9\xa93\xb7(\x13J\xf9\xc5?\xef\xf4\x96\xa1\xfa\x00\x00\x04\x00/\x00\xff\x01\x00\x00\x04\x00#\x00\x00'
 sh = b'\x16\x03\x01\x005\x02\x00\x001\x03\x01\x88\xac\xd4\xaf\x93~\xb5\x1b8c\xe7)\xa6\x9b\xa9\xed\xf3\xf3*\xdb\x00\x8bB\xf6\n\xcbz\x8eP\x83`G\x00\x00/\x00\x00\t\xff\x01\x00\x01\x00\x00#\x00\x00\x16\x03\x01\x03\xac\x0b\x00\x03\xa8\x00\x03\xa5\x00\x03\xa20\x82\x03\x9e0\x82\x02\x86\xa0\x03\x02\x01\x02\x02\t\x00\xfe\x04W\r\xc7\'\xe9\xf60\r\x06\t*\x86H\x86\xf7\r\x01\x01\x0b\x05\x000T1\x0b0\t\x06\x03U\x04\x06\x13\x02MN1\x140\x12\x06\x03U\x04\x07\x0c\x0bUlaanbaatar1\x170\x15\x06\x03U\x04\x0b\x0c\x0eScapy Test PKI1\x160\x14\x06\x03U\x04\x03\x0c\rScapy Test CA0\x1e\x17\r160916102811Z\x17\r260915102811Z0X1\x0b0\t\x06\x03U\x04\x06\x13\x02MN1\x140\x12\x06\x03U\x04\x07\x0c\x0bUlaanbaatar1\x170\x15\x06\x03U\x04\x0b\x0c\x0eScapy Test PKI1\x1a0\x18\x06\x03U\x04\x03\x0c\x11Scapy Test Server0\x82\x01"0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x01\x05\x00\x03\x82\x01\x0f\x000\x82\x01\n\x02\x82\x01\x01\x00\xcc\xf1\xf1\x9b`-`\xae\xf2\x98\r\')\xd9\xc0\tYL\x0fJ0\xa8R\xdf\xe5\xb1!\x9fO\xc3=V\x93\xdd_\xc6\xf7\xb3\xf6U\x8b\xe7\x92\xe2\xde\xf2\x85I\xb4\xa1,\xf4\xfdv\xa8g\xca\x04 `\x11\x18\xa6\xf2\xa9\xb6\xa6\x1d\xd9\xaa\xe5\xd9\xdb\xaf\xe6\xafUW\x9f\xffR\x89e\xe6\x80b\x80!\x94\xbc\xcf\x81\x1b\xcbg\xc2\x9d\xb5\x05w\x04\xa6\xc7\x88\x18\x80xh\x956\xde\x97\x1b\xb6a\x87B\x1au\x98E\x82\xeb>2\x11\xc8\x9b\x86B9\x8dM\x12\xb7X\x1b\x19\xf3\x9d+\xa1\x98\x82\xca\xd7;$\xfb\t9\xb0\xbc\xc2\x95\xcf\x82)u\x16)?B \x17+M@\x8cVl\xad\xba\x0f4\x85\xb1\x7f@yqx\xb7\xa5\x04\xbb\x94\xf7\xb5A\x95\xee|\xeb\x8d\x0cyhY\xef\xcb\xb3\xfa>x\x1e\xeegLz\xdd\xe0\x99\xef\xda\xe7\xef\xb2\t]\xbe\x80 !\x05\x83,D\xdb]*v)\xa5\xb0#\x88t\x07T"\xd6)z\x92\xf5o-\x9e\xe7\xf8&+\x9cXe\x02\x03\x01\x00\x01\xa3o0m0\t\x06\x03U\x1d\x13\x04\x020\x000\x0b\x06\x03U\x1d\x0f\x04\x04\x03\x02\x05\xe00\x1d\x06\x03U\x1d\x0e\x04\x16\x04\x14\xa1+ p\xd2k\x80\xe5e\xbc\xeb\x03\x0f\x88\x9ft\xad\xdd\xf6\x130\x1f\x06\x03U\x1d#\x04\x180\x16\x80\x14fS\x94\xf4\x15\xd1\xbdgh\xb0Q725\xe1\xa4\xaa\xde\x07|0\x13\x06\x03U\x1d%\x04\x0c0\n\x06\x08+\x06\x01\x05\x05\x07\x03\x010\r\x06\t*\x86H\x86\xf7\r\x01\x01\x0b\x05\x00\x03\x82\x01\x01\x00\x81\x88\x92sk\x93\xe7\x95\xd6\xddA\xee\x8e\x1e\xbd\xa3HX\xa7A5?{}\xd07\x98\x0e\xb8,\x94w\xc8Q6@\xadY\t(\xc8V\xd6\xea[\xac\xb4\xd8?h\xb7f\xca\xe1V7\xa9\x00e\xeaQ\xc9\xec\xb2iI]\xf9\xe3\xc0\xedaT\xc9\x12\x9f\xc6\xb0\nsU\xe8U5`\xef\x1c6\xf0\xda\xd1\x90wV\x04\xb8\xab8\xee\xf7\t\xc5\xa5\x98\x90#\xea\x1f\xdb\x15\x7f2(\x81\xab\x9b\x85\x02K\x95\xe77Q{\x1bH.\xfb>R\xa3\r\xb4F\xa9\x92:\x1c\x1f\xd7\n\x1eXJ\xfa.Q\x8f)\xc6\x1e\xb8\x0e1\x0es\xf1\'\x88\x17\xca\xc8i\x0c\xfa\x83\xcd\xb3y\x0e\x14\xb0\xb8\x9b/:-\t\xe3\xfc\x06\xf0:n\xfd6;+\x1a\t*\xe8\xab_\x8c@\xe4\x81\xb2\xbc\xf7\x83g\x11nN\x93\xea"\xaf\xff\xa3\x9awWv\xd0\x0b8\xac\xf8\x8a\x945\x8e\xd7\xd4a\xcc\x01\xff$\xb4\x8fa#\xba\x88\xd7Y\xe4\xe9\xba*N\xb5\x15\x0f\x9c\xd0\xea\x06\x91\xd9\xde\xab\x16\x03\x01\x00\x04\x0e\x00\x00\x00'
 ck = b"\x16\x03\x01\x01\x06\x10\x00\x01\x02\x01\x00w\x93\xec\xfa\xf3\xdf[\x9a4\xa7\x9e\xcd\x06=\x8dH\xf1\x069\x8c\x06\x01S\xf7\xb5\x16h\xf6\xd5 I\xd7\xf0\xc5Z\xf6\xe0f7\x95\x91\xddNC\xe7$\xf5\xdaZ\xcdG\xd8\x14\xcaV\x98\xc4\xb2\x8cm\xe51@\x9b\x9c\xb8\xadul\xd0\xdf\xf2\xd7@Q\xe4\x05J\xf31[\xdf\xc8'(\x8f#\xf0\xc4\x1c\xc6\x07G\xb327\x85\xad\xa2\xa6\xa2E\x18\x85rP\xb8\x86uL\\7\x82\x18\xceh\xc6\xd1\xf4\xcc\xb9VN\x85\x7f9c\x92\t\x96\x8e\x80\x06\xe4\r\xbfu<\xabgP^z\xc7\xfd\x8e\x12t^\xb7\xc7Lr\xdc5\xf8\xa7\xdb\x9c\xbd\xd5\xad\xabP<\xe7\x9f%f\xb4\xd8\xf4\xf0~\x99\xbeZ\xe9\xbc\x0c9\r\xb2Uq\xfcd\xa4\xda\x89\x90\xd1\x15\x05\xcc\x00\xb1\xcd\xa9c\xb4\xe8\x7fRH\xbd\xe1\xd2\xd8\x9c\xb6\xd2\x8dq9\xe5\t\xeb\xfc\x1b\x06\xac\xab\x96\xa7\xfd{\xdf\xf2\x16\r\xd6'\xb8\xd3\xa5L\xc8\x08 \xb9\xccN\xe5\xf0\xa0S\xf3\xc3\xc9\xdf\xee\xd0\r\xd8[\x14\x03\x01\x00\x01\x01\x16\x03\x01\x000~\x01\xe1!2\x90\xba\xc8 \xb6\x8c\xb7\xd9\xf5\x80\x1d$Z^\xc8\xa3\x9f\xb3\xf1M\x0c\xd1\xedd\xb1'\x0f\xe4ER\xc9\xf7L\xf3;\xc1\xbaz\xfa\xb76\xe3q"
@@ -1108,6 +1120,112 @@ def test_tls_without_cryptography(get_algs_from_ciphersuite_name_mock):
     assert isinstance(sh2.msg[0], TLSClientHello)
 
 test_tls_without_cryptography()
+
+###############################################################################
+########################### TLS Misc tests ####################################
+###############################################################################
+
+= Test tlsSession
+s = tlsSession(ipsrc="216.58.201.227", ipdst="127.0.0.1", sport=443, dport=443, sid=1)
+assert s.__repr__() == "216.58.201.227:443 > 127.0.0.1:443"
+assert s == s
+assert hash(s) == hash(s)
+assert not s.consider_write_padding()
+
+
+= Test connState
+assert s.wcs.__repr__() == 'Connection end : SERVER\nCipher suite   : TLS_NULL_WITH_NULL_NULL (0x0000)\nCompression    : null (0x00)\n'
+
+= Test tls.tools
+def test_tls_tools():
+    from scapy.layers.tls.crypto.compression import Comp_Deflate
+    from scapy.layers.tls.crypto.ciphers import CipherError
+    from scapy.layers.tls.crypto.cipher_stream import Cipher_RC4_40
+    from scapy.layers.tls.crypto.cipher_aead import (Cipher_AES_128_GCM,
+                                                     Cipher_AES_128_GCM_TLS13)
+    from scapy.layers.tls.crypto.hash import Hash_SHA256
+    from scapy.layers.tls.crypto.pkcs1 import pkcs_i2osp, pkcs_os2ip
+    from scapy.layers.tls.tools import TLSPlaintext, TLSCompressed, TLSCiphertext
+    from scapy.layers.tls.tools import _tls_compress, _tls_decompress
+    from scapy.layers.tls.tools import _tls_mac_add, _tls_mac_verify
+    from scapy.layers.tls.tools import _tls_add_pad, _tls_del_pad
+    from scapy.layers.tls.tools import _tls_encrypt, _tls_decrypt
+    from scapy.layers.tls.tools import _tls_aead_auth_encrypt, _tls_aead_auth_decrypt
+    plain = TLSPlaintext()
+    plain.type = 'application_data'
+    plain.version = 'TLS 1.2'
+    plain.data = b'X\xe1\xb1T\xaa\xb1\x0b\xa0zlg\xf8\xd14]%\xa9\x91d\x08\xc7t\xcd6\xd4"\x9f\xcf'
+    plain.len = len(plain.data)
+    # Compress/decompress test
+    alg = Comp_Deflate()
+    comp = _tls_compress(alg, plain)
+    assert isinstance(comp, TLSCompressed)
+    assert comp != plain
+    dcomp = _tls_decompress(alg, comp)
+    assert isinstance(dcomp, TLSPlaintext)
+    assert dcomp == plain
+    # Encrypt/decrypt test
+    ch = Cipher_RC4_40(_rc4_40_test.k)
+    encr = _tls_encrypt(ch, plain)
+    assert isinstance(encr, TLSCiphertext)
+    assert encr != plain
+    decr = _tls_decrypt(ch, encr)
+    assert isinstance(decr, TLSPlaintext)
+    assert decr == plain
+    encr = _tls_encrypt(ch, comp)
+    assert isinstance(encr, TLSCiphertext)
+    assert encr != comp
+    decr = _tls_decrypt(ch, encr)
+    assert isinstance(decr, TLSPlaintext)
+    assert (decr.version == comp.version and decr.type == comp.type
+            and decr.len == comp.len and decr.data == comp.data)
+    # MAC add/verify test
+    mac = Hash_SHA256()
+    save_encr = encr.copy()
+    assert save_encr is not encr
+    _tls_mac_add(mac, encr, 1)
+    assert isinstance(encr, TLSCiphertext)
+    had_mac = _tls_mac_verify(mac, encr, 1)
+    assert had_mac
+    assert encr == save_encr
+    # Pad add/delete test
+    save_comp = comp.copy()
+    assert save_comp is not comp
+    block_size = 8
+    _tls_add_pad(comp, block_size)
+    assert isinstance(comp, TLSCompressed)    
+    assert comp.len == save_comp.len + -save_comp.len % block_size + 1
+    had_pad = _tls_del_pad(comp)
+    assert had_pad
+    assert comp == save_comp
+    block_size = save_comp.len // 2
+    _tls_add_pad(comp, block_size)
+    assert isinstance(comp, TLSCompressed)    
+    assert comp.len == save_comp.len + -save_comp.len % block_size + 1
+    had_pad = _tls_del_pad(comp)
+    assert had_pad
+    assert comp == save_comp
+    # AEAD auth encrypt/decrypt test
+    ch_auth = Cipher_AES_128_GCM(key=_aes128gcm_test_1.k,
+                                 fixed_iv=_aes128gcm_test_1.n[:4],
+                                 nonce_explicit=pkcs_os2ip(_aes128gcm_test_1.n[4:]))
+    auth_encr = _tls_aead_auth_encrypt(ch_auth, comp, 1)
+    assert isinstance(auth_encr, TLSCiphertext)
+    assert auth_encr != comp
+    # auth_decr = _tls_aead_auth_decrypt(ch_auth, auth_encr, 1)
+    # assert isinstance(auth_decr, TLSCompressed)
+    # assert auth_decr == comp
+    ch_auth = Cipher_AES_128_GCM_TLS13(key=_aes128gcm_test_1.k,
+                                       fixed_iv=_aes128gcm_test_1.n)
+    auth_encr = _tls_aead_auth_encrypt(ch_auth, comp, 1)
+    assert isinstance(auth_encr, TLSCiphertext)
+    assert auth_encr != comp
+    # auth_decr = _tls_aead_auth_decrypt(ch_auth, auth_encr, 1)
+    # assert isinstance(auth_decr, TLSCompressed)
+    # assert auth_decr == comp
+
+test_tls_tools()
+
 
 ###############################################################################
 ############################ Automaton behaviour ##############################

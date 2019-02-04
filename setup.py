@@ -6,14 +6,16 @@ Distutils setup file for Scapy.
 
 
 from distutils import archive_util
-from distutils import sysconfig
-from distutils.core import setup
-from distutils.command.sdist import sdist
+try:
+    from setuptools import setup
+except ImportError:
+    from distutils.core import setup
+import io
 import os
 
 
 EZIP_HEADER = """#! /bin/sh
-PYTHONPATH=$0/%s exec python -m scapy.__init__
+PYTHONPATH=$0/%s exec python -m scapy
 """
 
 
@@ -40,6 +42,18 @@ def make_ezipfile(base_name, base_dir, verbose=0, dry_run=0, **kwargs):
 archive_util.ARCHIVE_FORMATS["ezip"] = (
     make_ezipfile, [], 'Executable ZIP file')
 
+
+def get_long_description():
+    try:
+        with io.open(os.path.join(os.path.dirname(__file__), "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+            desc = readme.partition("<!-- start_ppi_description -->")[2]
+            desc = desc.partition("<!-- stop_ppi_description -->")[0]
+            return desc.strip()
+    except IOError:
+        return None
+
+
 SCRIPTS = ['bin/scapy', 'bin/UTscapy']
 # On Windows we also need additional batch files to run the above scripts
 if os.name == "nt":
@@ -54,6 +68,9 @@ setup(
         'scapy/arch/bpf',
         'scapy/arch/windows',
         'scapy/contrib',
+        'scapy/contrib/automotive',
+        'scapy/contrib/automotive/bmw',
+        'scapy/contrib/automotive/gm',
         'scapy/layers',
         'scapy/layers/tls',
         'scapy/layers/tls/crypto',
@@ -63,7 +80,7 @@ setup(
         'scapy/tools',
     ],
     scripts=SCRIPTS,
-    data_files=[('share/man/man1', ["doc/scapy.1.gz"])],
+    data_files=[('share/man/man1', ["doc/scapy.1"])],
     package_data={
         'scapy': ['VERSION'],
     },
@@ -71,10 +88,16 @@ setup(
     # Metadata
     author='Philippe BIONDI',
     author_email='phil(at)secdev.org',
-    maintainer='Pierre LALET, Guillaume VALADON',
+    maintainer='Pierre LALET, Gabriel POTTER, Guillaume VALADON',
     description='Scapy: interactive packet manipulation tool',
+    long_description=get_long_description(),
+    long_description_content_type='text/markdown',
     license='GPLv2',
-    url='http://www.secdev.org/projects/scapy',
+    url='https://scapy.net',
+    project_urls={
+        'Documentation': 'https://scapy.readthedocs.io',
+        'Source Code': 'https://github.com/secdev/scapy/',
+    },
     download_url='https://github.com/secdev/scapy/tarball/master',
     keywords=["network"],
     classifiers=[
@@ -89,10 +112,10 @@ setup(
         "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.3",
         "Programming Language :: Python :: 3.4",
         "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
         "Topic :: Security",
         "Topic :: System :: Networking",
         "Topic :: System :: Networking :: Monitoring",

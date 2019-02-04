@@ -1,24 +1,24 @@
-## This file is part of Scapy
-## See http://www.secdev.org/projects/scapy for more informations
-## Copyright (C) Philippe Biondi <phil@secdev.org>
-##               Vincent Mauge   <vmauge.nospam@nospam.gmail.com>
-## This program is published under a GPLv2 license
+# This file is part of Scapy
+# See http://www.secdev.org/projects/scapy for more information
+# Copyright (C) Philippe Biondi <phil@secdev.org>
+# Vincent Mauge   <vmauge.nospam@nospam.gmail.com>
+# This program is published under a GPLv2 license
 
 """
 RADIUS (Remote Authentication Dial In User Service)
 """
 
 import struct
-import logging
 import hashlib
 import hmac
-from scapy.compat import *
-from scapy.packet import Packet, bind_layers
+from scapy.compat import orb, raw
+from scapy.packet import Packet, Padding, bind_layers
 from scapy.fields import ByteField, ByteEnumField, IntField, StrLenField,\
     XStrLenField, XStrFixedLenField, FieldLenField, PacketField,\
     PacketListField, IPField, MultiEnumField
 from scapy.layers.inet import UDP
 from scapy.layers.eap import EAP
+from scapy.utils import issubtype
 from scapy.config import conf
 from scapy.error import Scapy_Exception
 
@@ -261,7 +261,7 @@ class RadiusAttribute(Packet):
         if cls == "RadiusAttribute":
             if isinstance(self, RadiusAttribute):
                 return True
-        elif issubclass(cls, RadiusAttribute):
+        elif issubtype(cls, RadiusAttribute):
             if isinstance(self, cls):
                 return True
         return super(RadiusAttribute, self).haslayer(cls)
@@ -277,6 +277,9 @@ class RadiusAttribute(Packet):
             p = p[:1] + struct.pack("!B", length) + p[2:]
         return p
 
+    def guess_payload_class(self, _):
+        return Padding
+
 
 class _SpecificRadiusAttr(RadiusAttribute):
     """
@@ -286,7 +289,7 @@ class _SpecificRadiusAttr(RadiusAttribute):
 
     __slots__ = ["val"]
 
-    def __init__(self, _pkt="", post_transform=None, _internal=0, _underlayer=None, **fields):
+    def __init__(self, _pkt="", post_transform=None, _internal=0, _underlayer=None, **fields):  # noqa: E501
         super(_SpecificRadiusAttr, self).__init__(
             _pkt,
             post_transform,
@@ -495,7 +498,7 @@ class _RadiusAttrHexStringVal(_SpecificRadiusAttr):
 
     __slots__ = ["val"]
 
-    def __init__(self, _pkt="", post_transform=None, _internal=0, _underlayer=None, **fields):
+    def __init__(self, _pkt="", post_transform=None, _internal=0, _underlayer=None, **fields):  # noqa: E501
         super(_RadiusAttrHexStringVal, self).__init__(
             _pkt,
             post_transform,
@@ -519,14 +522,13 @@ class _RadiusAttrHexStringVal(_SpecificRadiusAttr):
             "B",
             adjust=lambda p, x: len(p.value) + 2
         ),
-        XStrLenField("value", "", length_from=lambda p: p.len - 2 if p.len else 0)
+        XStrLenField("value", "", length_from=lambda p: p.len - 2 if p.len else 0)  # noqa: E501
     ]
 
 
 class RadiusAttr_State(_RadiusAttrHexStringVal):
     """RFC 2865"""
     val = 24
-
 
 
 def prepare_packed_data(radius_packet, packed_req_authenticator):
@@ -575,6 +577,7 @@ class RadiusAttr_Message_Authenticator(_RadiusAttrHexStringVal):
 #
 # RADIUS attributes which values are IPv4 prefixes
 #
+
 
 class _RadiusAttrIPv4AddrVal(RadiusAttribute):
     """
@@ -794,7 +797,7 @@ _radius_attrs_values = {
         9: "X.75",
         10: "G.3 Fax",
         11: "SDSL - Symmetric DSL",
-        12: "ADSL-CAP - Asymmetric DSL, Carrierless Amplitude Phase Modulation",
+        12: "ADSL-CAP - Asymmetric DSL, Carrierless Amplitude Phase Modulation",  # noqa: E501
         13: "ADSL-DMT - Asymmetric DSL, Discrete Multi-Tone",
         14: "IDSL - ISDN Digital Subscriber Line",
         15: "Ethernet",
@@ -823,7 +826,7 @@ _radius_attrs_values = {
         38: "WIMAX-WIFI-IWK: WiMAX WIFI Interworking",
         39: "WIMAX-SFF: Signaling Forwarding Function for LTE/3GPP2",
         40: "WIMAX-HA-LMA: WiMAX HA and or LMA function",
-        41: "WIMAX-DHCP: WIMAX DCHP service",
+        41: "WIMAX-DHCP: WIMAX DHCP service",
         42: "WIMAX-LBS: WiMAX location based service",
         43: "WIMAX-WVS: WiMAX voice service"
     },
@@ -1054,32 +1057,6 @@ class RadiusAttr_Vendor_Specific(RadiusAttribute):
     ]
 
 
-class _RADIUSAttrPacketListField(PacketListField):
-    """
-    PacketListField handling a list of RADIUS attributes.
-    """
-
-    def getfield(self, pkt, s):
-        lst = []
-        length = None
-        ret = ""
-
-        if self.length_from is not None:
-            length = self.length_from(pkt)
-
-        if length is not None:
-            remain, ret = s[:length], s[length:]
-
-        while remain:
-            attr_len = orb(remain[1])
-            current = remain[:attr_len]
-            remain = remain[attr_len:]
-            packet = self.m2i(pkt, current)
-            lst.append(packet)
-
-        return remain + ret, lst
-
-
 # See IANA RADIUS Packet Type Codes registry
 _packet_codes = {
     1: "Access-Request",
@@ -1144,7 +1121,7 @@ class Radius(Packet):
             adjust=lambda pkt, x: len(pkt.attributes) + 20
         ),
         XStrFixedLenField("authenticator", "", 16),
-        _RADIUSAttrPacketListField(
+        PacketListField(
             "attributes",
             [],
             RadiusAttribute,

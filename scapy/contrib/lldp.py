@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 #
-# scapy.contrib.description = LLDP
+# scapy.contrib.description = Link Layer Discovery Protocol (LLDP)
 # scapy.contrib.status = loads
 
 """
@@ -28,7 +28,7 @@
             - IEEE 802.1AB 2016 - LLDP protocol, topology and MIB description
 
     :TODO:
-        - organization specific TLV e.g. ProfiNet
+        - organization specific TLV e.g. ProfiNet (see LLDPDUGenericOrganisationSpecific for a starting point)  # noqa: E501
 
     :NOTES:
         - you can find the layer configuration options at the end of this file
@@ -42,14 +42,17 @@
 
 """
 from scapy.config import conf
-from scapy.layers.dot11 import Packet
-from scapy.layers.l2 import Ether, Dot1Q, bind_layers, \
-    BitField, StrLenField, ByteEnumField, BitEnumField, \
-    BitFieldLenField, ShortField, Padding, Scapy_Exception, \
-    XStrLenField
+from scapy.error import log_runtime, Scapy_Exception
+from scapy.layers.l2 import Ether, Dot1Q
+from scapy.fields import MACField, IPField, BitField, \
+    StrLenField, ByteEnumField, BitEnumField, \
+    EnumField, ThreeBytesField, BitFieldLenField, \
+    ShortField, XStrLenField, ByteField
+from scapy.packet import Packet, bind_layers
 from scapy.modules.six.moves import range
+import scapy.modules.six as six
 from scapy.data import ETHER_TYPES
-from scapy.compat import orb, raw
+from scapy.compat import orb
 
 LLDP_NEAREST_BRIDGE_MAC = '01:80:c2:00:00:0e'
 LLDP_NEAREST_NON_TPMR_BRIDGE_MAC = '01:80:c2:00:00:03'
@@ -123,8 +126,11 @@ class LLDPDU(Packet):
 
     def guess_payload_class(self, payload):
         # type is a 7-bit bitfield spanning bits 1..7 -> div 2
-        lldpdu_tlv_type = orb(payload[0]) // 2
-        return LLDPDU_CLASS_TYPES[lldpdu_tlv_type]
+        try:
+            lldpdu_tlv_type = orb(payload[0]) // 2
+            return LLDPDU_CLASS_TYPES.get(lldpdu_tlv_type, conf.raw_layer)
+        except IndexError:
+            return conf.raw_layer
 
     @staticmethod
     def _dot1q_headers_size(layer):
@@ -147,7 +153,7 @@ class LLDPDU(Packet):
 
         last_layer = not pay
         if last_layer and conf.contribs['LLDP'].strict_mode() and \
-                        type(self).__name__ != LLDPDUEndOfLLDPDU.__name__:
+                type(self).__name__ != LLDPDUEndOfLLDPDU.__name__:
             raise LLDPInvalidLastLayerException('Last layer must be instance '
                                                 'of LLDPDUEndOfLLDPDU - '
                                                 'got {}'.
@@ -176,7 +182,7 @@ class LLDPDU(Packet):
         frame_size += LLDPDU.ETHER_HEADER_LEN
         frame_size += len(pkt) + len(pay) + LLDPDU.ETHER_FSC_LEN
         if frame_size < LLDPDU.ETHER_FRAME_MIN_LEN:
-            return pkt + pay + b'\x00' * (LLDPDU.ETHER_FRAME_MIN_LEN - frame_size)
+            return pkt + pay + b'\x00' * (LLDPDU.ETHER_FRAME_MIN_LEN - frame_size)  # noqa: E501
         return pkt + pay
 
     @staticmethod
@@ -279,6 +285,51 @@ class LLDPDU(Packet):
 
         super(LLDPDU, self).dissection_done(pkt)
 
+    def _check(self):
+        """Overwrited by LLDPU objects"""
+        pass
+
+    def post_dissect(self, s):
+        self._check()
+        return super(LLDPDU, self).post_dissect(s)
+
+    def do_build(self):
+        self._check()
+        return super(LLDPDU, self).do_build()
+
+
+class _LLDPidField(StrLenField):
+    """Class that selects the type of the ID field depending
+    on the type of `subtype`"""
+    __slots__ = StrLenField.__slots__ + ["subtypes_dict"]
+
+    def __init__(self, name, default, subtypes_dict, *args, **kargs):
+        self.subtypes_dict = subtypes_dict
+        super(_LLDPidField, self).__init__(name, default, *args, **kargs)
+
+    def m2i(self, pkt, x):
+        cls = self.subtypes_dict.get(pkt.subtype, StrLenField)
+        try:
+            return (cls.m2i.__func__ if six.PY2 else cls.m2i)(self, pkt, x)
+        except Exception:
+            log_runtime.exception("Failed to dissect " + self.name + " ! ")
+            return StrLenField.m2i(self, pkt, x)
+
+    def i2m(self, pkt, x):
+        cls = self.subtypes_dict.get(pkt.subtype, StrLenField)
+        try:
+            return (cls.i2m.__func__ if six.PY2 else cls.i2m)(self, pkt, x)
+        except Exception:
+            log_runtime.exception("Failed to build " + self.name + " ! ")
+            return StrLenField.i2m(self, pkt, x)
+
+
+def _ldp_id_adjustlen(pkt, x):
+    """Return the length of the `id` field,
+    according to its real encoded type"""
+    f, v = pkt.getfield_and_val('id')
+    return len(_LLDPidField.i2m(f, pkt, v)) + 1
+
 
 class LLDPDUChassisID(LLDPDU):
     """
@@ -296,6 +347,11 @@ class LLDPDUChassisID(LLDPDU):
         range(0x08, 0xff): 'reserved'
     }
 
+    LLDP_CHASSIS_ID_TLV_SUBTYPES_FIELDS = {
+        0x04: MACField,
+        0x05: IPField,
+    }
+
     SUBTYPE_RESERVED = 0x00
     SUBTYPE_CHASSIS_COMPONENT = 0x01
     SUBTYPE_INTERFACE_ALIAS = 0x02
@@ -308,9 +364,9 @@ class LLDPDUChassisID(LLDPDU):
     fields_desc = [
         BitEnumField('_type', 0x01, 7, LLDPDU.TYPES),
         BitFieldLenField('_length', None, 9, length_of='id',
-                         adjust=lambda pkt, x: len(pkt.id) + 1),
+                         adjust=lambda pkt, x: _ldp_id_adjustlen(pkt, x)),
         ByteEnumField('subtype', 0x00, LLDP_CHASSIS_ID_TLV_SUBTYPES),
-        XStrLenField('id', '', length_from=lambda pkt: pkt._length - 1)
+        _LLDPidField('id', '', LLDP_CHASSIS_ID_TLV_SUBTYPES_FIELDS, length_from=lambda pkt: pkt._length - 1)  # noqa: E501
     ]
 
     def _check(self):
@@ -319,14 +375,6 @@ class LLDPDUChassisID(LLDPDU):
         """
         if conf.contribs['LLDP'].strict_mode() and not self.id:
             raise LLDPInvalidLengthField('id must be >= 1 characters long')
-
-    def post_dissect(self, s):
-        self._check()
-        return super(LLDPDUChassisID, self).post_dissect(s)
-
-    def do_build(self):
-        self._check()
-        return super(LLDPDUChassisID, self).do_build()
 
 
 class LLDPDUPortID(LLDPDU):
@@ -345,6 +393,11 @@ class LLDPDUPortID(LLDPDU):
         range(0x08, 0xff): 'reserved'
     }
 
+    LLDP_PORT_ID_TLV_SUBTYPES_FIELDS = {
+        0x03: MACField,
+        0x04: IPField,
+    }
+
     SUBTYPE_RESERVED = 0x00
     SUBTYPE_INTERFACE_ALIAS = 0x01
     SUBTYPE_PORT_COMPONENT = 0x02
@@ -357,9 +410,9 @@ class LLDPDUPortID(LLDPDU):
     fields_desc = [
         BitEnumField('_type', 0x02, 7, LLDPDU.TYPES),
         BitFieldLenField('_length', None, 9, length_of='id',
-                         adjust=lambda pkt, x: len(pkt.id) + 1),
+                         adjust=lambda pkt, x: _ldp_id_adjustlen(pkt, x)),
         ByteEnumField('subtype', 0x00, LLDP_PORT_ID_TLV_SUBTYPES),
-        StrLenField('id', '', length_from=lambda pkt: pkt._length - 1)
+        _LLDPidField('id', '', LLDP_PORT_ID_TLV_SUBTYPES_FIELDS, length_from=lambda pkt: pkt._length - 1)  # noqa: E501
     ]
 
     def _check(self):
@@ -368,14 +421,6 @@ class LLDPDUPortID(LLDPDU):
         """
         if conf.contribs['LLDP'].strict_mode() and not self.id:
             raise LLDPInvalidLengthField('id must be >= 1 characters long')
-
-    def post_dissect(self, s):
-        self._check()
-        return super(LLDPDUPortID, self).post_dissect(s)
-
-    def do_build(self):
-        self._check()
-        return super(LLDPDUPortID, self).do_build()
 
 
 class LLDPDUTimeToLive(LLDPDU):
@@ -395,14 +440,6 @@ class LLDPDUTimeToLive(LLDPDU):
         if conf.contribs['LLDP'].strict_mode() and self._length != 2:
             raise LLDPInvalidLengthField('length must be 2 - got '
                                          '{}'.format(self._length))
-
-    def post_dissect(self, s):
-        self._check()
-        return super(LLDPDUTimeToLive, self).post_dissect(s)
-
-    def do_build(self):
-        self._check()
-        return super(LLDPDUTimeToLive, self).do_build()
 
 
 class LLDPDUEndOfLLDPDU(LLDPDU):
@@ -424,14 +461,6 @@ class LLDPDUEndOfLLDPDU(LLDPDU):
         if conf.contribs['LLDP'].strict_mode() and self._length != 0:
             raise LLDPInvalidLengthField('length must be 0 - got '
                                          '{}'.format(self._length))
-
-    def post_dissect(self, s):
-        self._check()
-        return super(LLDPDUEndOfLLDPDU, self).post_dissect(s)
-
-    def do_build(self):
-        self._check()
-        return super(LLDPDUEndOfLLDPDU, self).do_build()
 
 
 class LLDPDUPortDescription(LLDPDU):
@@ -515,14 +544,6 @@ class LLDPDUSystemCapabilities(LLDPDU):
         if conf.contribs['LLDP'].strict_mode() and self._length != 4:
             raise LLDPInvalidLengthField('length must be 4 - got '
                                          '{}'.format(self._length))
-
-    def post_dissect(self, s):
-        self._check()
-        return super(LLDPDUSystemCapabilities, self).post_dissect(s)
-
-    def do_build(self):
-        self._check()
-        return super(LLDPDUSystemCapabilities, self).do_build()
 
 
 class LLDPDUManagementAddress(LLDPDU):
@@ -630,7 +651,7 @@ class LLDPDUManagementAddress(LLDPDU):
                          8 + len(pkt.management_address) + len(pkt.object_id)),
         BitFieldLenField('_management_address_string_length', None, 8,
                          length_of='management_address',
-                         adjust=lambda pkt, x: len(pkt.management_address) + 1),
+                         adjust=lambda pkt, x: len(pkt.management_address) + 1),  # noqa: E501
         ByteEnumField('management_address_subtype', 0x00,
                       IANA_ADDRESS_FAMILY_NUMBERS),
         XStrLenField('management_address', '',
@@ -656,14 +677,39 @@ class LLDPDUManagementAddress(LLDPDU):
                     'management address must be  1..31 characters long - '
                     'got string of size {}'.format(management_address_len))
 
-    def post_dissect(self, s):
-        self._check()
-        return super(LLDPDUManagementAddress, self).post_dissect(s)
 
-    def do_build(self):
-        self._check()
-        return super(LLDPDUManagementAddress, self).do_build()
+class ThreeBytesEnumField(EnumField, ThreeBytesField):
 
+    def __init__(self, name, default, enum):
+        EnumField.__init__(self, name, default, enum, "!I")
+
+
+class LLDPDUGenericOrganisationSpecific(LLDPDU):
+
+    ORG_UNIQUE_CODE_PNO = 0x000ecf
+    ORG_UNIQUE_CODE_IEEE_802_1 = 0x0080c2
+    ORG_UNIQUE_CODE_IEEE_802_3 = 0x00120f
+    ORG_UNIQUE_CODE_TIA_TR_41_MED = 0x0012bb
+    ORG_UNIQUE_CODE_HYTEC = 0x30b216
+
+    ORG_UNIQUE_CODES = {
+        ORG_UNIQUE_CODE_PNO: "PROFIBUS International (PNO)",
+        ORG_UNIQUE_CODE_IEEE_802_1: "IEEE 802.1",
+        ORG_UNIQUE_CODE_IEEE_802_3: "IEEE 802.3",
+        ORG_UNIQUE_CODE_TIA_TR_41_MED: "TIA TR-41 Committee . Media Endpoint Discovery",  # noqa: E501
+        ORG_UNIQUE_CODE_HYTEC: "Hytec Geraetebau GmbH"
+    }
+
+    fields_desc = [
+        BitEnumField('_type', 127, 7, LLDPDU.TYPES),
+        BitFieldLenField('_length', None, 9, length_of='data', adjust=lambda pkt, x: len(pkt.data) + 4),  # noqa: E501
+        ThreeBytesEnumField('org_code', 0, ORG_UNIQUE_CODES),
+        ByteField('subtype', 0x00),
+        XStrLenField('data', '', length_from=lambda pkt: pkt._length - 4)
+    ]
+
+
+# 0x09 .. 0x7e is reserved for future standardization and for now treated as Raw() data  # noqa: E501
 LLDPDU_CLASS_TYPES = {
     0x00: LLDPDUEndOfLLDPDU,
     0x01: LLDPDUChassisID,
@@ -674,14 +720,15 @@ LLDPDU_CLASS_TYPES = {
     0x06: LLDPDUSystemDescription,
     0x07: LLDPDUSystemCapabilities,
     0x08: LLDPDUManagementAddress,
-    range(0x09, 0x7e): None,  # reserved - future standardization
-    127: None  # organisation specific TLV
+    127: LLDPDUGenericOrganisationSpecific
 }
+
 
 class LLDPConfiguration(object):
     """
     basic configuration for LLDP layer
     """
+
     def __init__(self):
         self._strict_mode = True
         self.strict_mode_enable()

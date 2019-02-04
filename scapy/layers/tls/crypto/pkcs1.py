@@ -1,7 +1,7 @@
-## This file is part of Scapy
-## Copyright (C) 2008 Arnaud Ebalard <arno@natisbad.org>
-##   2015, 2016, 2017 Maxence Tury <maxence.tury@ssi.gouv.fr>
-## This program is published under a GPLv2 license
+# This file is part of Scapy
+# Copyright (C) 2008 Arnaud Ebalard <arno@natisbad.org>
+#   2015, 2016, 2017 Maxence Tury <maxence.tury@ssi.gouv.fr>
+# This program is published under a GPLv2 license
 
 """
 PKCS #1 methods as defined in RFC 3447.
@@ -12,9 +12,11 @@ Ubuntu or OSX. This is why we reluctantly keep some legacy crypto here.
 """
 
 from __future__ import absolute_import
-from scapy.compat import *
+from scapy.compat import raw, hex_bytes, bytes_hex
+import scapy.modules.six as six
 
 from scapy.config import conf, crypto_validator
+from scapy.error import warning
 if conf.crypto_valid:
     from cryptography import utils
     from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
@@ -22,9 +24,6 @@ if conf.crypto_valid:
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import padding
     from cryptography.hazmat.primitives.hashes import HashAlgorithm
-
-from scapy.utils import randstring, zerofree_randstring, strxor, strand
-from scapy.error import warning
 
 
 #####################################################################
@@ -40,6 +39,7 @@ def pkcs_os2ip(s):
     """
     return int(bytes_hex(s), 16)
 
+
 def pkcs_i2osp(n, sLen):
     """
     I2OSP conversion function from RFC 3447.
@@ -50,10 +50,11 @@ def pkcs_i2osp(n, sLen):
             sLen     intended length of the resulting octet string
     Output: s        corresponding octet string
     """
-    #if n >= 256**sLen:
+    # if n >= 256**sLen:
     #    raise Exception("Integer too large for provided sLen %d" % sLen)
-    fmt = "%%0%dx" % (2*sLen)
+    fmt = "%%0%dx" % (2 * sLen)
     return hex_bytes(fmt % n)
+
 
 def pkcs_ilen(n):
     """
@@ -65,6 +66,7 @@ def pkcs_ilen(n):
         n >>= 8
         i += 1
     return i
+
 
 @crypto_validator
 def _legacy_pkcs1_v1_5_encode_md5_sha1(M, emLen):
@@ -81,7 +83,7 @@ def _legacy_pkcs1_v1_5_encode_md5_sha1(M, emLen):
         warning("pkcs_emsa_pkcs1_v1_5_encode: "
                 "intended encoded message length too short")
         return None
-    PS = b'\xff'*(emLen - 36 - 3)
+    PS = b'\xff' * (emLen - 36 - 3)
     return b'\x00' + b'\x01' + PS + b'\x00' + H
 
 
@@ -100,21 +102,20 @@ if conf.crypto_valid:
         block_size = 64
 
     _hashes = {
-            "md5"      : hashes.MD5,
-            "sha1"     : hashes.SHA1,
-            "sha224"   : hashes.SHA224,
-            "sha256"   : hashes.SHA256,
-            "sha384"   : hashes.SHA384,
-            "sha512"   : hashes.SHA512,
-            "md5-sha1" : MD5_SHA1
-            }
+        "md5": hashes.MD5,
+        "sha1": hashes.SHA1,
+        "sha224": hashes.SHA224,
+        "sha256": hashes.SHA256,
+        "sha384": hashes.SHA384,
+        "sha512": hashes.SHA512,
+        "md5-sha1": MD5_SHA1
+    }
 
     def _get_hash(hashStr):
         try:
             return _hashes[hashStr]()
         except KeyError:
             raise KeyError("Unknown hash function %s" % hashStr)
-
 
     def _get_padding(padStr, mgf=padding.MGF1, h=hashes.SHA256, label=None):
         if padStr == "pkcs":
@@ -134,7 +135,7 @@ if conf.crypto_valid:
 # Asymmetric Cryptography wrappers
 #####################################################################
 
-# Make sure that default values are consistent accross the whole TLS module,
+# Make sure that default values are consistent across the whole TLS module,
 # lest they be explicitly set to None between cert.py and pkcs1.py.
 
 class _EncryptAndVerifyRSA(object):
@@ -171,8 +172,8 @@ class _EncryptAndVerifyRSA(object):
         s = pkcs_os2ip(S)
         n = self._modulus
         if isinstance(s, int) and six.PY2:
-            s = long(s)
-        if (six.PY2 and not isinstance(s, long)) or s > n-1:
+            s = long(s)  # noqa: F821
+        if (six.PY2 and not isinstance(s, long)) or s > n - 1:  # noqa: F821
             warning("Key._rsaep() expects a long between 0 and n-1")
             return None
         m = pow(s, self._pubExp, n)
@@ -216,8 +217,8 @@ class _DecryptAndSignRSA(object):
         m = pkcs_os2ip(EM)
         n = self._modulus
         if isinstance(m, int) and six.PY2:
-            m = long(m)
-        if (six.PY2 and not isinstance(m, long)) or m > n-1:
+            m = long(m)  # noqa: F821
+        if (six.PY2 and not isinstance(m, long)) or m > n - 1:  # noqa: F821
             warning("Key._rsaep() expects a long between 0 and n-1")
             return None
         privExp = self.key.private_numbers().d

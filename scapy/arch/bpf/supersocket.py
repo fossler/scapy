@@ -14,9 +14,9 @@ import time
 from scapy.arch.bpf.core import get_dev_bpf, attach_filter
 from scapy.arch.bpf.consts import BIOCGBLEN, BIOCGDLT, BIOCGSTATS, \
     BIOCIMMEDIATE, BIOCPROMISC, BIOCSBLEN, BIOCSETIF, BIOCSHDRCMPLT, \
-    BPF_BUFFER_LENGTH
+    BPF_BUFFER_LENGTH, BIOCSDLT, DLT_IEEE802_11_RADIO
 from scapy.config import conf
-from scapy.consts import FREEBSD, NETBSD
+from scapy.consts import FREEBSD, NETBSD, DARWIN
 from scapy.data import ETH_P_ALL
 from scapy.error import Scapy_Exception, warning
 from scapy.supersocket import SuperSocket
@@ -40,7 +40,8 @@ class _L2bpfSocket(SuperSocket):
     ins = None
     closed = False
 
-    def __init__(self, iface=None, type=ETH_P_ALL, promisc=None, filter=None, nofilter=0):
+    def __init__(self, iface=None, type=ETH_P_ALL, promisc=None, filter=None,
+                 nofilter=0, monitor=False):
 
         # SuperSocket mandatory variables
         if promisc is None:
@@ -59,14 +60,14 @@ class _L2bpfSocket(SuperSocket):
 
         # Set the BPF buffer length
         try:
-            fcntl.ioctl(self.ins, BIOCSBLEN, struct.pack('I', BPF_BUFFER_LENGTH))
+            fcntl.ioctl(self.ins, BIOCSBLEN, struct.pack('I', BPF_BUFFER_LENGTH))  # noqa: E501
         except IOError:
             raise Scapy_Exception("BIOCSBLEN failed on /dev/bpf%i" %
                                   self.dev_bpf)
 
         # Assign the network interface to the BPF handle
         try:
-            fcntl.ioctl(self.ins, BIOCSETIF, struct.pack("16s16x", self.iface.encode()))
+            fcntl.ioctl(self.ins, BIOCSETIF, struct.pack("16s16x", self.iface.encode()))  # noqa: E501
         except IOError:
             raise Scapy_Exception("BIOCSETIF failed on %s" % self.iface)
         self.assigned_interface = self.iface
@@ -74,6 +75,17 @@ class _L2bpfSocket(SuperSocket):
         # Set the interface into promiscuous
         if self.promisc:
             self.set_promisc(1)
+
+        # Set the interface to monitor mode
+        # Note: - trick from libpcap/pcap-bpf.c - monitor_mode()
+        #       - it only works on OS X 10.5 and later
+        if DARWIN and monitor:
+            dlt_radiotap = struct.pack('I', DLT_IEEE802_11_RADIO)
+            try:
+                fcntl.ioctl(self.ins, BIOCSDLT, dlt_radiotap)
+            except IOError:
+                raise Scapy_Exception("Can't set %s into monitor mode!" %
+                                      self.iface)
 
         # Don't block on read
         try:
@@ -98,7 +110,7 @@ class _L2bpfSocket(SuperSocket):
                 else:
                     filter = "not (%s)" % conf.except_filter
             if filter is not None:
-                attach_filter(self.ins, self.iface, filter)
+                attach_filter(self.ins, filter, self.iface)
 
         # Set the guessed packet class
         self.guessed_cls = self.guess_cls()
@@ -159,7 +171,7 @@ class _L2bpfSocket(SuperSocket):
         try:
             fcntl.fcntl(self.ins, fcntl.F_SETFL, new_fd_flags)
             self.fd_flags = new_fd_flags
-        except:
+        except Exception:
             warning("Can't set flags on this file descriptor !")
 
     def get_stats(self):
@@ -202,6 +214,14 @@ class _L2bpfSocket(SuperSocket):
         """Dummy recv method"""
         raise Exception("Can't recv anything with %s" % self.__name__)
 
+    @staticmethod
+    def select(sockets, remain=None):
+        """This function is called during sendrecv() routine to select
+        the available sockets.
+        """
+        # sockets, None (means use the socket's recv() )
+        return bpf_select(sockets, remain), None
+
 
 class L2bpfListenSocket(_L2bpfSocket):
     """"Scapy L2 BPF Listen Super Socket"""
@@ -222,10 +242,10 @@ class L2bpfListenSocket(_L2bpfSocket):
         """Return the index to the end of the current packet"""
 
         # from <net/bpf.h>
-        return ((bh_h + bh_c)+(BPF_ALIGNMENT-1)) & ~(BPF_ALIGNMENT-1)
+        return ((bh_h + bh_c) + (BPF_ALIGNMENT - 1)) & ~(BPF_ALIGNMENT - 1)
 
     def extract_frames(self, bpf_buffer):
-        """Extract all frames from the buffer and stored them in the received list."""
+        """Extract all frames from the buffer and stored them in the received list."""  # noqa: E501
 
         # Ensure that the BPF buffer contains at least the header
         len_bb = len(bpf_buffer)
@@ -241,19 +261,19 @@ class L2bpfListenSocket(_L2bpfSocket):
             bh_tstamp_offset = 8
 
         # Parse the BPF header
-        bh_caplen = struct.unpack('I', bpf_buffer[bh_tstamp_offset:bh_tstamp_offset+4])[0]
+        bh_caplen = struct.unpack('I', bpf_buffer[bh_tstamp_offset:bh_tstamp_offset + 4])[0]  # noqa: E501
         next_offset = bh_tstamp_offset + 4
-        bh_datalen = struct.unpack('I', bpf_buffer[next_offset:next_offset+4])[0]
+        bh_datalen = struct.unpack('I', bpf_buffer[next_offset:next_offset + 4])[0]  # noqa: E501
         next_offset += 4
-        bh_hdrlen = struct.unpack('H', bpf_buffer[next_offset:next_offset+2])[0]
+        bh_hdrlen = struct.unpack('H', bpf_buffer[next_offset:next_offset + 2])[0]  # noqa: E501
         if bh_datalen == 0:
             return
 
         # Get and store the Scapy object
-        frame_str = bpf_buffer[bh_hdrlen:bh_hdrlen+bh_caplen]
+        frame_str = bpf_buffer[bh_hdrlen:bh_hdrlen + bh_caplen]
         try:
             pkt = self.guessed_cls(frame_str)
-        except:
+        except Exception:
             if conf.debug_dissector:
                 raise
             pkt = conf.raw_layer(frame_str)
@@ -324,13 +344,13 @@ class L3bpfSocket(L2bpfSocket):
         # Assign the network interface to the BPF handle
         if self.assigned_interface != iff:
             try:
-                fcntl.ioctl(self.outs, BIOCSETIF, struct.pack("16s16x", iff.encode()))
+                fcntl.ioctl(self.outs, BIOCSETIF, struct.pack("16s16x", iff.encode()))  # noqa: E501
             except IOError:
                 raise Scapy_Exception("BIOCSETIF failed on %s" % iff)
             self.assigned_interface = iff
 
         # Build the frame
-        frame = raw(self.guessed_cls()/pkt)
+        frame = raw(self.guessed_cls() / pkt)
         pkt.sent_time = time.time()
 
         # Send the frame
@@ -341,7 +361,7 @@ class L3bpfSocket(L2bpfSocket):
 
 def isBPFSocket(obj):
     """Return True is obj is a BPF Super Socket"""
-    return isinstance(obj, L2bpfListenSocket) or isinstance(obj, L2bpfListenSocket) or isinstance(obj, L3bpfSocket)
+    return isinstance(obj, L2bpfListenSocket) or isinstance(obj, L2bpfListenSocket) or isinstance(obj, L3bpfSocket)  # noqa: E501
 
 
 def bpf_select(fds_list, timeout=None):

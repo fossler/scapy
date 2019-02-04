@@ -46,9 +46,6 @@ conf.route.delt(net="1.2.3.4/32")
 = IPField class
 ~ core field
 
-if WINDOWS:
-    route_add_loopback()
-
 i = IPField("foo", None)
 r = i.i2m(None, "1.2.3.4")
 r
@@ -86,6 +83,21 @@ assert IP(raw(IP(dst="0.0.0.0/31"))).src == defaddr
 #b.i2m("
 #b.getfield
 
+= ThreeBytesField
+~ field threebytesfield
+
+class TestThreeBytesField(Packet):
+    fields_desc = [ 
+        X3BytesField('test1', None),
+        ThreeBytesField('test2', None),
+        LEX3BytesField('test3', None),
+        LEThreeBytesField('test4', None),
+    ]
+
+p = TestThreeBytesField(test1=0x123456, test2=123456, test3=0xfedbca, test4=567890)
+assert(raw(p) == b'\x12\x34\x56\x01\xe2\x40\xca\xdb\xfe\x52\xaa\x08')
+print(p.sprintf('%test1% %test2% %test3% %test4%'))
+assert(p.sprintf('%test1% %test2% %test3% %test4%') == '0x123456 123456 0xfedbca 567890')
 
 ############
 ############
@@ -985,6 +997,84 @@ True
 
 ############
 ############
++ XByteEnumField tests
+
+= Building expect_exception handler
+~ field xbyteenumfield
+
+def expect_exception(e, c):
+    try:
+        eval(c)
+        return False
+    except e:
+        return True
+
+
+= XByteEnumField tests initialization
+~ field xbyteenumfield
+
+f = XByteEnumField('test', 0, {0: 'Foo', 1: 'Bar'})
+fcb = XByteEnumField('test', 0, (
+    lambda x: 'Foo' if x == 0 else 'Bar' if x == 1 else lhex(x),
+    lambda x: x
+))
+
+True
+
+= XByteEnumField.i2repr_one
+~ field xbyteenumfield
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == 'Bar')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == 'Bar')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+True
+
+= XByteEnumField update tests initialization
+~ field xbyteenumfield
+enum = ObservableDict({0: 'Foo', 1: 'Bar'})
+f = XByteEnumField('test', 0, enum)
+fcb = XByteEnumField('test', 0, (
+    lambda x: 'Foo' if x == 0 else 'Bar' if x == 1 else lhex(x),
+    lambda x: x
+))
+
+True
+
+= XByteEnumField.i2repr_one with update
+~ field xbyteenumfield
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == 'Bar')
+assert(f.i2repr_one(None, 2) == '0x2')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == 'Bar')
+assert(f.i2repr_one(None, 2) == '0x2')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+del enum[1]
+enum[2] = 'Baz'
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == '0x1')
+assert(f.i2repr_one(None, 2) == 'Baz')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == '0x1')
+assert(f.i2repr_one(None, 2) == 'Baz')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+True
+
+############
+############
 + XShortEnumField tests
 
 = Building expect_exception handler
@@ -1022,6 +1112,45 @@ assert(f.i2repr_one(None, 0xff) == '0xff')
 
 True
 
+= XShortEnumField update tests initialization
+~ field xshortenumfield
+enum = ObservableDict({0: 'Foo', 1: 'Bar'})
+f = XShortEnumField('test', 0, enum)
+fcb = XShortEnumField('test', 0, (
+    lambda x: 'Foo' if x == 0 else 'Bar' if x == 1 else lhex(x),
+    lambda x: x
+))
+
+True
+
+= XShortEnumField.i2repr_one with update
+~ field xshortenumfield
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == 'Bar')
+assert(f.i2repr_one(None, 2) == '0x2')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == 'Bar')
+assert(f.i2repr_one(None, 2) == '0x2')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+del enum[1]
+enum[2] = 'Baz'
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == '0x1')
+assert(f.i2repr_one(None, 2) == 'Baz')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+assert(f.i2repr_one(None, 0) == 'Foo')
+assert(f.i2repr_one(None, 1) == '0x1')
+assert(f.i2repr_one(None, 2) == 'Baz')
+assert(f.i2repr_one(None, 0xff) == '0xff')
+
+True
+
 ############
 ############
 + DNSStrField tests
@@ -1029,10 +1158,227 @@ True
 = Raise exception - test data
 
 dnsf = DNSStrField("test", "")
-assert(dnsf.getfield("", b"\x01x\x00") == (b"", b"x."))
+assert(dnsf.getfield(None, b"\x01x\x00") == (b"", b"x."))
 
 try:
-    dnsf.getfield("", b"\xff")
+    dnsf.getfield(None, b"\xc0\xff")
     assert(False)
 except (Scapy_Exception, IndexError):
     pass
+
++ YesNoByteField
+
+= default usage
+
+yn_bf = YesNoByteField('test', 0x00)
+assert(yn_bf.i2repr(None, 0x00) == 'no')
+assert(yn_bf.i2repr(None, 0x01) == 'yes')
+assert(yn_bf.i2repr(None, 0x02) == 'yes')
+assert(yn_bf.i2repr(None, 0xff) == 'yes')
+
+= inverted yes - no (scalar config)
+yn_bf = YesNoByteField('test', 0x00, config={'yes': 0x00, 'no': 0x01})
+assert(yn_bf.i2repr(None, 0x00) == 'yes')
+assert(yn_bf.i2repr(None, 0x01) == 'no')
+assert(yn_bf.i2repr(None, 0x02) == 2)
+assert(yn_bf.i2repr(None, 0xff) == 255)
+
+= inverted yes - no (range config)
+yn_bf = YesNoByteField('test', 0x00, config={'yes': 0x00, 'no': (0x01, 0xff)})
+assert(yn_bf.i2repr(None, 0x00) == 'yes')
+assert(yn_bf.i2repr(None, 0x01) == 'no')
+assert(yn_bf.i2repr(None, 0x02) == 'no')
+assert(yn_bf.i2repr(None, 0xff) == 'no')
+
+= yes - no (using sets)
+yn_bf = YesNoByteField('test', 0x00, config={'yes': [0x00, 0x02], 'no': [0x01, 0x04, 0xff]})
+assert(yn_bf.i2repr(None, 0x00) == 'yes')
+assert(yn_bf.i2repr(None, 0x01) == 'no')
+assert(yn_bf.i2repr(None, 0x02) == 'yes')
+assert(yn_bf.i2repr(None, 0x03) == 3)
+assert(yn_bf.i2repr(None, 0x04) == 'no')
+assert(yn_bf.i2repr(None, 0x05) == 5)
+assert(yn_bf.i2repr(None, 0xff) == 'no')
+
+= yes, no and invalid
+yn_bf = YesNoByteField('test', 0x00, config={'no': 0x00, 'yes': 0x01, 'invalid': (0x02, 0xff)})
+assert(yn_bf.i2repr(None, 0x00) == 'no')
+assert(yn_bf.i2repr(None, 0x01) == 'yes')
+assert(yn_bf.i2repr(None, 0x02) == 'invalid')
+assert(yn_bf.i2repr(None, 0xff) == 'invalid')
+
+= invalid scalar spec
+
+try:
+    YesNoByteField('test', 0x00, config={'no': 0x00, 'yes': 256})
+    assert(False)
+except FieldValueRangeException:
+    pass
+
+= invalid range spec - invalid length
+
+try:
+    YesNoByteField('test', 0x00, config={'no': 0x00, 'yes': (0x00, 0x02, 0x02)})
+    assert(False)
+except FieldAttributeException:
+    pass
+
+= invalid range spec - invalid value
+
+try:
+    YesNoByteField('test', 0x00, config={'no': 0x00, 'yes': (0x100, 0x01)})
+    assert(False)
+except FieldValueRangeException:
+    pass
+
+try:
+    YesNoByteField('test', 0x00, config={'no': 0x00, 'yes': (0x00, 0x100)})
+    assert(False)
+except FieldValueRangeException:
+    pass
+
+= invalid set spec - invalid value
+
+try:
+    YesNoByteField('test', 0x00, config={'no': 0x00, 'yes': [0x01, 0x101]})
+    assert(False)
+except FieldValueRangeException:
+    pass
+
+= FlasgField - Python incompatible name
+
+assert Dot11().FCfield.to_DS is False
+
+########
+########
++ MultipleTypeField
+
+= Test initialization order
+
+class DebugPacket(Packet):
+    fields_desc = [
+        ByteEnumField("atyp", 0x1, {0x1: "IPv4", 0x3: "DNS", 0x4: "IPv6"}),
+        MultipleTypeField(
+            [
+                # IPv4
+                (IPField("addr", "0.0.0.0"), lambda pkt: pkt.atyp == 0x1),
+                # DNS
+                (DNSStrField("addr", ""), lambda pkt: pkt.atyp == 0x3),
+                # IPv6
+                (IP6Field("addr", "::"), lambda pkt: pkt.atyp == 0x4),
+            ],
+            StrField("addr", "")
+        ),
+    ]
+
+= Default order
+
+a = DebugPacket(atyp=0x3, addr="scapy.net")
+a = DebugPacket(raw(a))
+assert a.addr == b"scapy.net."
+
+= Reversed order
+
+a = DebugPacket(addr="scapy.net", atyp=0x3)
+a = DebugPacket(raw(a))
+assert a.addr == b"scapy.net."
+
+########
+########
++ FlagsField
+
+= Test Flags Field Iterator
+
+class FlagsTest(Packet):
+    fields_desc = [FlagsField("flags", 0, 8,
+                              ["f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7"])]
+
+= Test upper nibble
+
+a = FlagsTest(b"\xf0")
+flags = list(a.flags)
+
+assert len(flags) == 4
+assert "f4" in flags
+assert "f5" in flags
+assert "f6" in flags
+assert "f7" in flags
+
+= Test lower nibble
+
+a = FlagsTest(b"\x0f")
+flags = list(a.flags)
+
+assert len(flags) == 4
+assert "f3" in flags
+assert "f2" in flags
+assert "f1" in flags
+assert "f0" in flags
+
+= Test single flag 1
+
+a = FlagsTest(b"\x01")
+flags = list(a.flags)
+
+assert len(flags) == 1
+assert "f0" in flags
+
+= Test single flag 2
+
+a = FlagsTest(b"\x02")
+flags = list(a.flags)
+
+assert len(flags) == 1
+assert "f1" in flags
+
+= Test single flag 0x80
+
+a = FlagsTest(b"\x80")
+flags = list(a.flags)
+
+assert len(flags) == 1
+assert "f7" in flags
+
+= Test pattern 0x55
+
+a = FlagsTest(b"\x55")
+flags = list(a.flags)
+
+assert len(flags) == 4
+assert "f6" in flags
+assert "f2" in flags
+assert "f4" in flags
+assert "f0" in flags
+
+= Test pattern 0xAA
+
+a = FlagsTest(b"\xAA")
+flags = list(a.flags)
+
+assert len(flags) == 4
+assert "f7" in flags
+assert "f3" in flags
+assert "f5" in flags
+assert "f1" in flags
+
+= Test pattern 0x00
+
+a = FlagsTest(b"\x00")
+flags = list(a.flags)
+
+assert len(flags) == 0
+
+= Test pattern 0xFF
+
+a = FlagsTest(b"\xFF")
+flags = list(a.flags)
+
+assert len(flags) == 8
+assert "f7" in flags
+assert "f3" in flags
+assert "f5" in flags
+assert "f1" in flags
+assert "f6" in flags
+assert "f2" in flags
+assert "f4" in flags
+assert "f0" in flags

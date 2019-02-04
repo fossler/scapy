@@ -1,7 +1,7 @@
-## This file is part of Scapy
-## See http://www.secdev.org/projects/scapy for more informations
-## Copyright (C) Philippe Biondi <phil@secdev.org>
-## This program is published under a GPLv2 license
+# This file is part of Scapy
+# See http://www.secdev.org/projects/scapy for more information
+# Copyright (C) Philippe Biondi <phil@secdev.org>
+# This program is published under a GPLv2 license
 
 """
 Main module for interactive startup.
@@ -10,19 +10,25 @@ Main module for interactive startup.
 from __future__ import absolute_import
 from __future__ import print_function
 
-import sys, os, getopt, re, code
-import gzip, glob
+import sys
+import os
+import getopt
+import code
+import gzip
+import glob
 import importlib
 import logging
 from random import choice
 import types
 import io
 
-# Never add any global import, in main.py, that would trigger a warning messsage
+# Never add any global import, in main.py, that would trigger a warning message  # noqa: E501
 # before the console handlers gets added in interact()
-from scapy.error import log_interactive, log_loading, log_scapy, warning
+from scapy.error import log_interactive, log_loading, log_scapy
 import scapy.modules.six as six
-from scapy.themes import DefaultTheme, apply_ipython_style
+from scapy.themes import DefaultTheme, BlackAndWhite, apply_ipython_style
+from scapy.consts import WINDOWS
+from scapy.config import conf, ConfClass
 
 IGNORED = list(six.moves.builtins.__dict__)
 
@@ -37,9 +43,12 @@ QUOTES = [
     ("Craft packets like I craft my beer.", "Jean De Clerck"),
     ("Craft packets before they craft you.", "Socrate"),
     ("Craft me if you can.", "IPv6 layer"),
-    ("To craft a packet, you have to be a packet, and learn how to swim in the "
+    ("To craft a packet, you have to be a packet, and learn how to swim in the "  # noqa: E501
      "wires and in the waves.", "Jean-Claude Van Damme"),
+    ("We are in France, we say Skappee. OK? Merci.", "Sebastien Chabal"),
+    ("Wanna support scapy? Rate it on sectools! http://sectools.org/tool/scapy/", "Satoshi Nakamoto"),  # noqa: E501
 ]
+
 
 def _probe_config_file(cf):
     cf_path = os.path.join(os.path.expanduser("~"), cf)
@@ -50,18 +59,19 @@ def _probe_config_file(cf):
     else:
         return cf_path
 
-def _read_config_file(cf, _globals=globals(), _locals=locals(), interactive=True):
-    """Read a config file: execute a python file while loading scapy, that may contain
+
+def _read_config_file(cf, _globals=globals(), _locals=locals(), interactive=True):  # noqa: E501
+    """Read a config file: execute a python file while loading scapy, that may contain  # noqa: E501
     some pre-configured values.
-    
-    If _globals or _locals are specified, they will be updated with the loaded vars.
-    This allows an external program to use the function. Otherwise, vars are only available
+
+    If _globals or _locals are specified, they will be updated with the loaded vars.  # noqa: E501
+    This allows an external program to use the function. Otherwise, vars are only available  # noqa: E501
     from inside the scapy console.
-    
+
     params:
     - _globals: the globals() vars
     - _locals: the locals() vars
-    - interactive: specified whether or not errors should be printed using the scapy console or
+    - interactive: specified whether or not errors should be printed using the scapy console or  # noqa: E501
     raised.
 
     ex, content of a config.py file:
@@ -78,31 +88,34 @@ def _read_config_file(cf, _globals=globals(), _locals=locals(), interactive=True
         if interactive:
             raise
         log_loading.warning("Cannot read config file [%s] [%s]", cf, e)
-    except Exception as e:
+    except Exception:
         if interactive:
             raise
-        log_loading.exception("Error during evaluation of config file [%s]", cf)
-        
+        log_loading.exception("Error during evaluation of config file [%s]", cf)  # noqa: E501
+
+
 def _validate_local(x):
     """Returns whether or not a variable should be imported.
     Will return False for any default modules (sys), or if
     they are detected as private vars (starting with a _)"""
     global IGNORED
-    return x[0] != "_" and not x in IGNORED
+    return x[0] != "_" and x not in IGNORED
+
 
 DEFAULT_PRESTART_FILE = _probe_config_file(".scapy_prestart.py")
 DEFAULT_STARTUP_FILE = _probe_config_file(".scapy_startup.py")
 SESSION = None
 
+
 def _usage():
-    print("""Usage: scapy.py [-s sessionfile] [-c new_startup_file] [-p new_prestart_file] [-C] [-P]
+    print("""Usage: scapy.py [-s sessionfile] [-c new_startup_file] [-p new_prestart_file] [-C] [-P]  # noqa: E501
     -C: do not read startup file
     -P: do not read pre-startup file""")
     sys.exit(0)
 
 
 ######################
-## Extension system ##
+#  Extension system  #
 ######################
 
 
@@ -134,12 +147,15 @@ symbols to the global symbol table.
     except Exception:
         log_interactive.error("Loading module %s", module, exc_info=True)
 
-def load_module(name):
+
+def load_module(name, globals_dict=None, symb_list=None):
     """Loads a Scapy module to make variables, objects and functions
     available globally.
 
     """
-    _load("scapy.modules."+name)
+    _load("scapy.modules." + name,
+          globals_dict=globals_dict, symb_list=symb_list)
+
 
 def load_layer(name, globals_dict=None, symb_list=None):
     """Loads a Scapy layer module to make variables, objects and functions
@@ -149,7 +165,8 @@ def load_layer(name, globals_dict=None, symb_list=None):
     _load("scapy.layers." + LAYER_ALIASES.get(name, name),
           globals_dict=globals_dict, symb_list=symb_list)
 
-def load_contrib(name):
+
+def load_contrib(name, globals_dict=None, symb_list=None):
     """Loads a Scapy contrib module to make variables, objects and
     functions available globally.
 
@@ -159,49 +176,64 @@ def load_contrib(name):
     """
     try:
         importlib.import_module("scapy.contrib." + name)
-        _load("scapy.contrib." + name)
-    except ImportError:
+        _load("scapy.contrib." + name,
+              globals_dict=globals_dict, symb_list=symb_list)
+    except ImportError as e:
         # if layer not found in contrib, try in layers
-        load_layer(name)
+        try:
+            load_layer(name,
+                       globals_dict=globals_dict, symb_list=symb_list)
+        except ImportError:
+            raise e  # Let's raise the original error to avoid confusion
 
-def list_contrib(name=None):
+
+def list_contrib(name=None, ret=False):
+    """Show the list of all existing contribs.
+    Params:
+     - name: filter to search the contribs
+     - ret: whether the function should return a dict instead of printing it
+    """
     if name is None:
-        name="*.py"
+        name = "*.py"
     elif "*" not in name and "?" not in name and not name.endswith(".py"):
         name += ".py"
     name = os.path.join(os.path.dirname(__file__), "contrib", name)
+    results = []
     for f in sorted(glob.glob(name)):
         mod = os.path.basename(f)
         if mod.startswith("__"):
             continue
         if mod.endswith(".py"):
             mod = mod[:-3]
-        desc = { "description":"-", "status":"?", "name":mod }
+        desc = {"description": "-", "status": "?", "name": mod}
         for l in io.open(f, errors="replace"):
             p = l.find("scapy.contrib.")
             if p >= 0:
                 p += 14
                 q = l.find("=", p)
                 key = l[p:q].strip()
-                value = l[q+1:].strip()
+                value = l[q + 1:].strip()
                 desc[key] = value
-        print("%(name)-20s: %(description)-40s status=%(status)s" % desc)
+        results.append(desc)
+    if ret:
+        return results
+    else:
+        for desc in results:
+            print("%(name)-20s: %(description)-40s status=%(status)s" % desc)
 
-                        
-
-
-    
 
 ##############################
-## Session saving/restoring ##
+#  Session saving/restoring  #
 ##############################
 
 def update_ipython_session(session):
     """Updates IPython session with a custom one"""
     try:
+        global get_ipython
         get_ipython().user_ns.update(session)
-    except:
+    except Exception:
         pass
+
 
 def save_session(fname=None, session=None, pickleProto=-1):
     """Save current Scapy session to the file specified in the fname arg.
@@ -220,7 +252,7 @@ def save_session(fname=None, session=None, pickleProto=-1):
     if session is None:
         try:
             session = get_ipython().user_ns
-        except:
+        except Exception:
             session = six.moves.builtins.__dict__["scapy_session"]
 
     to_be_saved = session.copy()
@@ -229,24 +261,25 @@ def save_session(fname=None, session=None, pickleProto=-1):
 
     for k in list(to_be_saved):
         i = to_be_saved[k]
-        if hasattr(i, "__module__") and (k[0] == "_" or i.__module__.startswith("IPython")):
+        if hasattr(i, "__module__") and (k[0] == "_" or i.__module__.startswith("IPython")):  # noqa: E501
             del(to_be_saved[k])
         if isinstance(i, ConfClass):
             del(to_be_saved[k])
         elif isinstance(i, (type, type, types.ModuleType)):
             if k[0] != "_":
-                log_interactive.error("[%s] (%s) can't be saved.", k, type(to_be_saved[k]))
+                log_interactive.error("[%s] (%s) can't be saved.", k, type(to_be_saved[k]))  # noqa: E501
             del(to_be_saved[k])
 
     try:
-         os.rename(fname, fname+".bak")
+        os.rename(fname, fname + ".bak")
     except OSError:
-         pass
-    
-    f=gzip.open(fname,"wb")
+        pass
+
+    f = gzip.open(fname, "wb")
     six.moves.cPickle.dump(to_be_saved, f, pickleProto)
     f.close()
     del f
+
 
 def load_session(fname=None):
     """Load current Scapy session from the file specified in the fname arg.
@@ -257,10 +290,10 @@ def load_session(fname=None):
     if fname is None:
         fname = conf.session
     try:
-        s = six.moves.cPickle.load(gzip.open(fname,"rb"))
+        s = six.moves.cPickle.load(gzip.open(fname, "rb"))
     except IOError:
         try:
-            s = six.moves.cPickle.load(open(fname,"rb"))
+            s = six.moves.cPickle.load(open(fname, "rb"))
         except IOError:
             # Raise "No such file exception"
             raise
@@ -271,7 +304,8 @@ def load_session(fname=None):
     update_ipython_session(scapy_session)
 
     log_loading.info("Loaded session [%s]" % fname)
-    
+
+
 def update_session(fname=None):
     """Update current Scapy session from the file specified in the fname arg.
 
@@ -280,23 +314,24 @@ def update_session(fname=None):
     if fname is None:
         fname = conf.session
     try:
-        s = six.moves.cPickle.load(gzip.open(fname,"rb"))
+        s = six.moves.cPickle.load(gzip.open(fname, "rb"))
     except IOError:
-        s = six.moves.cPickle.load(open(fname,"rb"))
+        s = six.moves.cPickle.load(open(fname, "rb"))
     scapy_session = six.moves.builtins.__dict__["scapy_session"]
     scapy_session.update(s)
     update_ipython_session(scapy_session)
 
+
 def init_session(session_name, mydict=None):
     global SESSION
     global GLOBKEYS
-    
-    scapy_builtins = {k: v for k, v in six.iteritems(importlib.import_module(".all", "scapy").__dict__) if _validate_local(k)}
+
+    scapy_builtins = {k: v for k, v in six.iteritems(importlib.import_module(".all", "scapy").__dict__) if _validate_local(k)}  # noqa: E501
     six.moves.builtins.__dict__.update(scapy_builtins)
     GLOBKEYS.extend(scapy_builtins)
     GLOBKEYS.append("scapy_session")
-    scapy_builtins=None # XXX replace with "with" statement
-    
+    scapy_builtins = None
+
     if session_name:
         try:
             os.stat(session_name)
@@ -305,14 +340,14 @@ def init_session(session_name, mydict=None):
         else:
             try:
                 try:
-                    SESSION = six.moves.cPickle.load(gzip.open(session_name,"rb"))
+                    SESSION = six.moves.cPickle.load(gzip.open(session_name, "rb"))  # noqa: E501
                 except IOError:
-                    SESSION = six.moves.cPickle.load(open(session_name,"rb"))
+                    SESSION = six.moves.cPickle.load(open(session_name, "rb"))
                 log_loading.info("Using session [%s]" % session_name)
             except EOFError:
                 log_loading.error("Error opening session [%s]" % session_name)
             except AttributeError:
-                log_loading.error("Error opening session [%s]. Attribute missing" %  session_name)
+                log_loading.error("Error opening session [%s]. Attribute missing" % session_name)  # noqa: E501
 
         if SESSION:
             if "conf" in SESSION:
@@ -323,7 +358,7 @@ def init_session(session_name, mydict=None):
                 conf.session = session_name
         else:
             conf.session = session_name
-            SESSION = {"conf":conf}
+            SESSION = {"conf": conf}
     else:
         SESSION = {"conf": conf}
 
@@ -335,16 +370,18 @@ def init_session(session_name, mydict=None):
         GLOBKEYS.extend(mydict)
 
 ################
-##### Main #####
+#     Main     #
 ################
+
 
 def scapy_delete_temp_files():
     for f in conf.temp_files:
         try:
             os.unlink(f)
-        except:
+        except Exception:
             pass
     del(conf.temp_files[:])
+
 
 def _prepare_quote(quote, author, max_len=78):
     """This function processes a quote and returns a string that is ready
@@ -355,6 +392,7 @@ to be used in the fancy prompt.
     max_len -= 6
     lines = []
     cur_line = []
+
     def _len(line):
         return sum(len(elt) for elt in line) + len(line) - 1
     while quote:
@@ -369,12 +407,13 @@ to be used in the fancy prompt.
     lines.append('   | %s-- %s' % (" " * (max_len - len(author) - 5), author))
     return lines
 
-def interact(mydict=None,argv=None,mybanner=None,loglevel=20):
+
+def interact(mydict=None, argv=None, mybanner=None, loglevel=20):
     global SESSION
     global GLOBKEYS
 
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))  # noqa: E501
     log_scapy.addHandler(console_handler)
 
     from scapy.config import conf
@@ -407,15 +446,17 @@ def interact(mydict=None,argv=None,mybanner=None,loglevel=20):
             elif opt == "-P":
                 PRESTART_FILE = None
             elif opt == "-d":
-                conf.logLevel = max(1, conf.logLevel-10)
+                conf.logLevel = max(1, conf.logLevel - 10)
 
         if len(opts[1]) > 0:
-            raise getopt.GetoptError("Too many parameters : [%s]" % " ".join(opts[1]))
-
+            raise getopt.GetoptError("Too many parameters : [%s]" % " ".join(opts[1]))  # noqa: E501
 
     except getopt.GetoptError as msg:
         log_loading.error(msg)
         sys.exit(1)
+
+    # Reset sys.argv, otherwise IPython thinks it is for him
+    sys.argv = sys.argv[:1]
 
     init_session(session_name, mydict)
 
@@ -423,6 +464,26 @@ def interact(mydict=None,argv=None,mybanner=None,loglevel=20):
         _read_config_file(STARTUP_FILE, interactive=True)
     if PRESTART_FILE:
         _read_config_file(PRESTART_FILE, interactive=True)
+
+    if not conf.interactive_shell or conf.interactive_shell.lower() in [
+            "ipython", "auto"
+    ]:
+        try:
+            import IPython
+            from IPython import start_ipython
+        except ImportError:
+            log_loading.warning(
+                "IPython not available. Using standard Python shell "
+                "instead.\nAutoCompletion, History are disabled."
+            )
+            if WINDOWS:
+                log_loading.warning("IPython not available. On Windows, colors are disabled")  # noqa: E501
+                conf.color_theme = BlackAndWhite()
+            IPYTHON = False
+        else:
+            IPYTHON = True
+    else:
+        IPYTHON = False
 
     if conf.fancy_prompt:
 
@@ -477,23 +538,6 @@ def interact(mydict=None,argv=None,mybanner=None,loglevel=20):
         the_banner += "\n"
         the_banner += mybanner
 
-    if not conf.interactive_shell or conf.interactive_shell.lower() in [
-            "ipython", "auto"
-    ]:
-        try:
-            import IPython
-            from IPython.terminal.embed import InteractiveShellEmbed
-        except ImportError:
-            log_loading.warning(
-                "IPython not available. Using standard Python shell "
-                "instead.\nAutoCompletion, History are disabled."
-            )
-            IPYTHON = False
-        else:
-            IPYTHON = True
-    else:
-        IPYTHON = False
-
     if IPYTHON:
         banner = the_banner + " using IPython %s\n" % IPython.__version__
         try:
@@ -504,41 +548,36 @@ def interact(mydict=None,argv=None,mybanner=None,loglevel=20):
                 "available."
             )
             try:
-                ipshell = InteractiveShellEmbed(
-                    banner1=banner,
+                start_ipython(
+                    display_banner=False,
                     user_ns=SESSION,
+                    exec_lines=["print(\"\"\"" + banner + "\"\"\")"]
                 )
-            except:
-                code.interact(banner = the_banner, local=SESSION)
+            except Exception:
+                code.interact(banner=the_banner, local=SESSION)
         else:
             cfg = Config()
             try:
                 get_ipython
             except NameError:
-                # Set "classic" prompt style when launched from run_scapy(.bat) files
+                # Set "classic" prompt style when launched from run_scapy(.bat) files  # noqa: E501
                 # Register and apply scapy color+prompt style
                 apply_ipython_style(shell=cfg.TerminalInteractiveShell)
                 cfg.TerminalInteractiveShell.confirm_exit = False
                 cfg.TerminalInteractiveShell.separate_in = u''
-            cfg.TerminalInteractiveShell.hist_file = conf.histfile
+            if int(IPython.__version__[0]) >= 6:
+                cfg.TerminalInteractiveShell.term_title_format = "Scapy v%s" % conf.version  # noqa: E501
+            else:
+                cfg.TerminalInteractiveShell.term_title = False
+            cfg.HistoryAccessor.hist_file = conf.histfile
+            cfg.InteractiveShell.banner1 = banner
             # configuration can thus be specified here.
             try:
-                ipshell = InteractiveShellEmbed(config=cfg,
-                                                banner1=banner,
-                                                hist_file=conf.histfile if conf.histfile else None,
-                                                user_ns=SESSION)
+                start_ipython(config=cfg, user_ns=SESSION)
             except (AttributeError, TypeError):
-                log_loading.warning("IPython too old. Won't support history and color style.")
-                try:
-                    ipshell = InteractiveShellEmbed(
-                        banner1=banner,
-                        user_ns=SESSION,
-                    )
-                except:
-                    code.interact(banner = the_banner, local=SESSION)
-        ipshell(local_ns=SESSION)
+                code.interact(banner=the_banner, local=SESSION)
     else:
-        code.interact(banner = the_banner, local=SESSION)
+        code.interact(banner=the_banner, local=SESSION)
 
     if conf.session:
         save_session(conf.session, SESSION)
@@ -546,8 +585,9 @@ def interact(mydict=None,argv=None,mybanner=None,loglevel=20):
     for k in GLOBKEYS:
         try:
             del(six.moves.builtins.__dict__[k])
-        except:
+        except Exception:
             pass
+
 
 if __name__ == "__main__":
     interact()

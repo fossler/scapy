@@ -1,7 +1,7 @@
-## This file is part of Scapy
-## See http://www.secdev.org/projects/scapy for more informations
-## Copyright (C) Philippe Biondi <phil@secdev.org>
-## This program is published under a GPLv2 license
+# This file is part of Scapy
+# See http://www.secdev.org/projects/scapy for more information
+# Copyright (C) Philippe Biondi <phil@secdev.org>
+# This program is published under a GPLv2 license
 
 """
 Global variables and functions for handling external data sets.
@@ -10,22 +10,22 @@ Global variables and functions for handling external data sets.
 
 import os
 import re
-import sys
 import time
 
 
 from scapy.dadict import DADict
-from scapy.consts import DARWIN, FREEBSD, NETBSD, OPENBSD
+from scapy.consts import FREEBSD, NETBSD, OPENBSD, WINDOWS
 from scapy.error import log_loading
-from scapy.compat import *
+from scapy.compat import plain_str
+import scapy.modules.six as six
 
 
 ############
-## Consts ##
+#  Consts  #
 ############
 
-ETHER_ANY = b"\x00"*6
-ETHER_BROADCAST = b"\xff"*6
+ETHER_ANY = b"\x00" * 6
+ETHER_BROADCAST = b"\xff" * 6
 
 ETH_P_ALL = 3
 ETH_P_IP = 0x800
@@ -85,167 +85,191 @@ DLT_PFLOG = 117
 DLT_PRISM_HEADER = 119
 DLT_AIRONET_HEADER = 120
 DLT_IEEE802_11_RADIO = 127
-DLT_LINUX_IRDA  = 144
+DLT_LINUX_IRDA = 144
+DLT_IEEE802_11_RADIO_AVS = 163
 DLT_BLUETOOTH_HCI_H4 = 187
-DLT_PPI   = 192
+DLT_USB_LINUX = 189
+DLT_IEEE802_15_4_WITHFCS = 195
+DLT_BLUETOOTH_HCI_H4_WITH_PHDR = 201
+DLT_PPP_WITH_DIR = 204
+DLT_PPI = 192
 DLT_CAN_SOCKETCAN = 227
 DLT_IPV4 = 228
 DLT_IPV6 = 229
+DLT_IEEE802_15_4_NOFCS = 230
+DLT_USBPCAP = 249
+DLT_USB_DARWIN = 266
+DLT_BLUETOOTH_LE_LL = 251
+DLT_BLUETOOTH_LE_LL_WITH_PHDR = 256
 
 # From net/ipv6.h on Linux (+ Additions)
-IPV6_ADDR_UNICAST     = 0x01
-IPV6_ADDR_MULTICAST   = 0x02
-IPV6_ADDR_CAST_MASK   = 0x0F
-IPV6_ADDR_LOOPBACK    = 0x10
-IPV6_ADDR_GLOBAL      = 0x00
-IPV6_ADDR_LINKLOCAL   = 0x20
-IPV6_ADDR_SITELOCAL   = 0x40     # deprecated since Sept. 2004 by RFC 3879
-IPV6_ADDR_SCOPE_MASK  = 0xF0
-#IPV6_ADDR_COMPATv4   = 0x80     # deprecated; i.e. ::/96
-#IPV6_ADDR_MAPPED     = 0x1000   # i.e.; ::ffff:0.0.0.0/96
-IPV6_ADDR_6TO4        = 0x0100   # Added to have more specific info (should be 0x0101 ?)
+IPV6_ADDR_UNICAST = 0x01
+IPV6_ADDR_MULTICAST = 0x02
+IPV6_ADDR_CAST_MASK = 0x0F
+IPV6_ADDR_LOOPBACK = 0x10
+IPV6_ADDR_GLOBAL = 0x00
+IPV6_ADDR_LINKLOCAL = 0x20
+IPV6_ADDR_SITELOCAL = 0x40     # deprecated since Sept. 2004 by RFC 3879
+IPV6_ADDR_SCOPE_MASK = 0xF0
+# IPV6_ADDR_COMPATv4   = 0x80     # deprecated; i.e. ::/96
+# IPV6_ADDR_MAPPED     = 0x1000   # i.e.; ::ffff:0.0.0.0/96
+IPV6_ADDR_6TO4 = 0x0100   # Added to have more specific info (should be 0x0101 ?)  # noqa: E501
 IPV6_ADDR_UNSPECIFIED = 0x10000
 
 
 # On windows, epoch is 01/02/1970 at 00:00
-EPOCH = time.mktime((1970, 1, 2, 0, 0, 0, 3, 1, 0))-86400
+EPOCH = time.mktime((1970, 1, 2, 0, 0, 0, 3, 1, 0)) - 86400
 
-MTU = 0xffff # a.k.a give me all you have
+MTU = 0xffff  # a.k.a give me all you have
 
-WINDOWS=sys.platform.startswith("win")
 
- 
-# file parsing to get some values :
-
-def load_protocols(filename):
+def load_protocols(filename, _integer_base=10):
+    """"Parse /etc/protocols and return values as a dictionary."""
     spaces = re.compile(b"[ \t]+|\n")
     dct = DADict(_name=filename)
     try:
-        for l in open(filename, "rb"):
-            try:
-                shrp = l.find(b"#")
-                if  shrp >= 0:
-                    l = l[:shrp]
-                l = l.strip()
-                if not l:
-                    continue
-                lt = tuple(re.split(spaces, l))
-                if len(lt) < 2 or not lt[0]:
-                    continue
-                dct[lt[0]] = int(lt[1])
-            except Exception as e:
-                log_loading.info("Couldn't parse file [%s]: line [%r] (%s)", filename, l, e)
+        with open(filename, "rb") as fdesc:
+            for line in fdesc:
+                try:
+                    shrp = line.find(b"#")
+                    if shrp >= 0:
+                        line = line[:shrp]
+                    line = line.strip()
+                    if not line:
+                        continue
+                    lt = tuple(re.split(spaces, line))
+                    if len(lt) < 2 or not lt[0]:
+                        continue
+                    dct[lt[0]] = int(lt[1], _integer_base)
+                except Exception as e:
+                    log_loading.info(
+                        "Couldn't parse file [%s]: line [%r] (%s)",
+                        filename,
+                        line,
+                        e,
+                    )
     except IOError:
         log_loading.info("Can't open %s file", filename)
     return dct
 
+
 def load_ethertypes(filename):
-    spaces = re.compile(b"[ \t]+|\n")
-    dct = DADict(_name=filename)
-    try:
-        f=open(filename, "rb")
-        for l in f:
-            try:
-                shrp = l.find(b"#")
-                if  shrp >= 0:
-                    l = l[:shrp]
-                l = l.strip()
-                if not l:
-                    continue
-                lt = tuple(re.split(spaces, l))
-                if len(lt) < 2 or not lt[0]:
-                    continue
-                dct[lt[0]] = int(lt[1], 16)
-            except Exception as e:
-                log_loading.info("Couldn't parse file [%s]: line [%r] (%s)", filename, l, e)
-        f.close()
-    except IOError as msg:
-        pass
-    return dct
+    """"Parse /etc/ethertypes and return values as a dictionary."""
+    return load_protocols(filename, _integer_base=16)
+
 
 def load_services(filename):
     spaces = re.compile(b"[ \t]+|\n")
-    tdct=DADict(_name="%s-tcp"%filename)
-    udct=DADict(_name="%s-udp"%filename)
+    tdct = DADict(_name="%s-tcp" % filename)
+    udct = DADict(_name="%s-udp" % filename)
     try:
-        f=open(filename, "rb")
-        for l in f:
-            try:
-                shrp = l.find(b"#")
-                if  shrp >= 0:
-                    l = l[:shrp]
-                l = l.strip()
-                if not l:
-                    continue
-                lt = tuple(re.split(spaces, l))
-                if len(lt) < 2 or not lt[0]:
-                    continue
-                if lt[1].endswith(b"/tcp"):
-                    tdct[lt[0]] = int(lt[1].split(b'/')[0])
-                elif lt[1].endswith(b"/udp"):
-                    udct[lt[0]] = int(lt[1].split(b'/')[0])
-            except Exception as e:
-                log_loading.warning("Couldn't parse file [%s]: line [%r] (%s)", filename, l, e)
-        f.close()
+        with open(filename, "rb") as fdesc:
+            for line in fdesc:
+                try:
+                    shrp = line.find(b"#")
+                    if shrp >= 0:
+                        line = line[:shrp]
+                    line = line.strip()
+                    if not line:
+                        continue
+                    lt = tuple(re.split(spaces, line))
+                    if len(lt) < 2 or not lt[0]:
+                        continue
+                    if lt[1].endswith(b"/tcp"):
+                        tdct[lt[0]] = int(lt[1].split(b'/')[0])
+                    elif lt[1].endswith(b"/udp"):
+                        udct[lt[0]] = int(lt[1].split(b'/')[0])
+                except Exception as e:
+                    log_loading.warning(
+                        "Couldn't parse file [%s]: line [%r] (%s)",
+                        filename,
+                        line,
+                        e,
+                    )
     except IOError:
         log_loading.info("Can't open /etc/services file")
-    return tdct,udct
+    return tdct, udct
 
 
 class ManufDA(DADict):
     def fixname(self, val):
         return plain_str(val)
+
+    def __dir__(self):
+        return ["lookup", "reverse_lookup"]
+
     def _get_manuf_couple(self, mac):
         oui = ":".join(mac.split(":")[:3]).upper()
-        return self.__dict__.get(oui,(mac,mac))
+        return self.__dict__.get(oui, (mac, mac))
+
     def _get_manuf(self, mac):
         return self._get_manuf_couple(mac)[1]
+
     def _get_short_manuf(self, mac):
         return self._get_manuf_couple(mac)[0]
+
     def _resolve_MAC(self, mac):
         oui = ":".join(mac.split(":")[:3]).upper()
         if oui in self:
-            return ":".join([self[oui][0]]+ mac.split(":")[3:])
+            return ":".join([self[oui][0]] + mac.split(":")[3:])
         return mac
-    def __repr__(self):
-        return "\n".join("<%s %s, %s>" % (i[0], i[1][0], i[1][1]) for i in self.__dict__.items())
-        
-        
+
+    def lookup(self, mac):
+        """Find OUI name matching to a MAC"""
+        oui = ":".join(mac.split(":")[:3]).upper()
+        return self[oui]
+
+    def reverse_lookup(self, name, case_sensitive=False):
+        """Find all MACs registered to a OUI
+        params:
+         - name: the OUI name
+         - case_sensitive: default to False
+        returns: a dict of mac:tuples (Name, Extended Name)
+        """
+        if case_sensitive:
+            filtr = lambda x, l: any(x == z for z in l)
+        else:
+            name = name.lower()
+            filtr = lambda x, l: any(x == z.lower() for z in l)
+        return {k: v for k, v in six.iteritems(self.__dict__)
+                if filtr(name, v)}
+
 
 def load_manuf(filename):
-    manufdb=ManufDA(_name=filename)
+    """Load manuf file from Wireshark.
+    param:
+     - filename: the file to load the manuf file from"""
+    manufdb = ManufDA(_name=filename)
     with open(filename, "rb") as fdesc:
-        for l in fdesc:
+        for line in fdesc:
             try:
-                l = l.strip()
-                if not l or l.startswith(b"#"):
+                line = line.strip()
+                if not line or line.startswith(b"#"):
                     continue
-                oui,shrt=l.split()[:2]
-                i = l.find(b"#")
-                if i < 0:
-                    lng=shrt
-                else:
-                    lng = l[i+2:]
+                parts = line.split(None, 2)
+                oui, shrt = parts[:2]
+                lng = parts[2].lstrip(b"#").strip() if len(parts) > 2 else ""
+                lng = lng or shrt
                 manufdb[oui] = plain_str(shrt), plain_str(lng)
             except Exception:
                 log_loading.warning("Couldn't parse one line from [%s] [%r]",
-                                    filename, l, exc_info=True)
+                                    filename, line, exc_info=True)
     return manufdb
-    
+
 
 if WINDOWS:
-    ETHER_TYPES=load_ethertypes("ethertypes")
-    IP_PROTOS=load_protocols(os.environ["SystemRoot"]+"\system32\drivers\etc\protocol")
-    TCP_SERVICES,UDP_SERVICES=load_services(os.environ["SystemRoot"] + "\system32\drivers\etc\services")
+    ETHER_TYPES = load_ethertypes("ethertypes")
+    IP_PROTOS = load_protocols(os.environ["SystemRoot"] + "\\system32\\drivers\\etc\\protocol")  # noqa: E501
+    TCP_SERVICES, UDP_SERVICES = load_services(os.environ["SystemRoot"] + "\\system32\\drivers\\etc\\services")  # noqa: E501
     # Default value, will be updated by arch.windows
     try:
         MANUFDB = load_manuf(os.environ["ProgramFiles"] + "\\wireshark\\manuf")
-    except IOError:
+    except (IOError, OSError):  # FileNotFoundError not available on Py2 - using OSError  # noqa: E501
         MANUFDB = None
 else:
-    IP_PROTOS=load_protocols("/etc/protocols")
-    ETHER_TYPES=load_ethertypes("/etc/ethertypes")
-    TCP_SERVICES,UDP_SERVICES=load_services("/etc/services")
+    IP_PROTOS = load_protocols("/etc/protocols")
+    ETHER_TYPES = load_ethertypes("/etc/ethertypes")
+    TCP_SERVICES, UDP_SERVICES = load_services("/etc/services")
     MANUFDB = None
     for prefix in ['/usr', '/usr/local', '/opt', '/opt/wireshark']:
         try:
@@ -253,14 +277,14 @@ else:
                                               "manuf"))
             if MANUFDB:
                 break
-        except IOError:
+        except (IOError, OSError):  # Same as above
             pass
     if not MANUFDB:
         log_loading.warning("Cannot read wireshark manuf database")
 
 
 #####################
-## knowledge bases ##
+#  knowledge bases  #
 #####################
 
 class KnowledgeBase:
@@ -271,7 +295,7 @@ class KnowledgeBase:
     def lazy_init(self):
         self.base = ""
 
-    def reload(self, filename = None):
+    def reload(self, filename=None):
         if filename is not None:
             self.filename = filename
         oldbase = self.base
@@ -284,5 +308,3 @@ class KnowledgeBase:
         if self.base is None:
             self.lazy_init()
         return self.base
-    
-

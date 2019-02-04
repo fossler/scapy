@@ -17,19 +17,23 @@
 # You should have received a copy of the GNU General Public License
 # along with Scapy. If not, see <http://www.gnu.org/licenses/>.
 
-# scapy.contrib.description = GTPv2
+# scapy.contrib.description = GPRS Tunneling Protocol v2 (GTPv2)
 # scapy.contrib.status = loads
 
-import time
-import logging
+import struct
 
-from scapy.packet import *
-from scapy.fields import *
-from scapy.layers.inet import IP, UDP
-from scapy.layers.inet6 import IP6Field
+
 from scapy.compat import orb
+from scapy.fields import BitEnumField, BitField, ByteEnumField, ByteField, \
+    ConditionalField, IntField, IPField, LongField, PacketField, \
+    PacketListField, ShortEnumField, ShortField, StrFixedLenField, \
+    StrLenField, ThreeBytesField, XBitField, XIntField, XShortField
+from scapy.packet import bind_layers, Packet, Raw
+from scapy.volatile import RandIP, RandShort
 
-import scapy.contrib.gtp as gtp
+
+from scapy.contrib import gtp
+
 
 RATType = {
     6: "EUTRAN",
@@ -104,8 +108,8 @@ class GTPHeader(Packet):
     def post_build(self, p, pay):
         p += pay
         if self.length is None:
-            l = len(p)-8
-            p = p[:2] + struct.pack("!H", l) + p[4:]
+            tmp_len = len(p) - 8
+            p = p[:2] + struct.pack("!H", tmp_len) + p[4:]
         return p
 
     def hashret(self):
@@ -266,24 +270,24 @@ class IE_BearerContext(gtp.IE_Base):
 class IE_NotImplementedTLV(gtp.IE_Base):
     name = "IE not implemented"
     fields_desc = [ByteEnumField("ietype", 0, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    StrLenField("data", "", length_from=lambda x: x.length)]
 
 
 class IE_IMSI(gtp.IE_Base):
     name = "IE IMSI"
     fields_desc = [ByteEnumField("ietype", 1, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    gtp.TBCDByteField("IMSI", "33607080910",
-                                        length_from=lambda x: x.length)]
+                                     length_from=lambda x: x.length)]
 
 
 class IE_Cause(gtp.IE_Base):
     name = "IE Cause"
     fields_desc = [ByteEnumField("ietype", 2, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    ByteEnumField("Cause", 1, CauseValues),
@@ -296,7 +300,7 @@ class IE_Cause(gtp.IE_Base):
 class IE_RecoveryRestart(gtp.IE_Base):
     name = "IE Recovery Restart"
     fields_desc = [ByteEnumField("ietype", 3, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    ByteField("restart_counter", 0)]
@@ -305,17 +309,17 @@ class IE_RecoveryRestart(gtp.IE_Base):
 class IE_APN(gtp.IE_Base):
     name = "IE APN"
     fields_desc = [ByteEnumField("ietype", 71, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    gtp.APNStrLenField("APN", "internet",
-                                         length_from=lambda x: x.length)]
+                                      length_from=lambda x: x.length)]
 
 
 class IE_AMBR(gtp.IE_Base):
     name = "IE AMBR"
     fields_desc = [ByteEnumField("ietype", 72, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    IntField("AMBR_Uplink", 0),
@@ -325,17 +329,17 @@ class IE_AMBR(gtp.IE_Base):
 class IE_MSISDN(gtp.IE_Base):
     name = "IE MSISDN"
     fields_desc = [ByteEnumField("ietype", 76, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    gtp.TBCDByteField("digits", "33123456789",
-                                        length_from=lambda x: x.length)]
+                                     length_from=lambda x: x.length)]
 
 
 class IE_Indication(gtp.IE_Base):
     name = "IE Cause"
     fields_desc = [ByteEnumField("ietype", 77, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    BitField("DAF", 0, 1),
@@ -390,6 +394,7 @@ class IE_Indication(gtp.IE_Base):
         BitField("CPSR", 0, 1), lambda pkt: pkt.length > 3),
 
     ]
+
 
 PDN_TYPES = {
     1: "IPv4",
@@ -455,7 +460,7 @@ PCO_PROTOCOL_TYPES = {
     0x000c: 'P-CSCF IPv4 Address Request',
     0x0010: 'IPv4 Link MTU Request',
     0x8021: 'IPCP',
-    0xc023: 'Password Authentification Protocol',
+    0xc023: 'Password Authentication Protocol',
     0xc223: 'Challenge Handshake Authentication Protocol',
 }
 
@@ -477,7 +482,7 @@ def PCO_option_dispatcher(s):
 
 
 def len_options(pkt):
-    return pkt.length-4 if pkt.length else 0
+    return pkt.length - 4 if pkt.length else 0
 
 
 class PCO_P_CSCF_IPv6_Address_Request(PCO_Option):
@@ -557,7 +562,7 @@ class PCO_IPCP(PCO_Option):
 
 
 class PCO_PPP_Auth(PCO_Option):
-    name = "PPP Password Authentification Protocol"
+    name = "PPP Password Authentication Protocol"
     fields_desc = [ByteField("Code", 0),
                    ByteField("Identifier", 0),
                    ShortField("length", 0),
@@ -577,14 +582,14 @@ class PCO_PPP_Auth(PCO_Option):
 
 
 class PCO_PasswordAuthentificationProtocol(PCO_Option):
-    name = "PCO Password Authentification Protocol"
+    name = "PCO Password Authentication Protocol"
     fields_desc = [ShortEnumField("type", None, PCO_PROTOCOL_TYPES),
                    ByteField("length", 0),
                    PacketField("PPP", None, PCO_PPP_Auth)]
 
 
 class PCO_PPP_Challenge(PCO_Option):
-    name = "PPP Password Authentification Protocol"
+    name = "PPP Password Authentication Protocol"
     fields_desc = [ByteField("Code", 0),
                    ByteField("Identifier", 0),
                    ShortField("length", 0),
@@ -595,12 +600,12 @@ class PCO_PPP_Challenge(PCO_Option):
                        lambda pkt: pkt.value_size),
                    ConditionalField(StrFixedLenField(
                        "name", "",
-                       length_from=lambda pkt: pkt.length-pkt.value_size-5),
+                       length_from=lambda pkt: pkt.length - pkt.value_size - 5),  # noqa: E501
                        lambda pkt: pkt.length)]
 
 
 class PCO_ChallengeHandshakeAuthenticationProtocol(PCO_Option):
-    name = "PCO Password Authentification Protocol"
+    name = "PCO Password Authentication Protocol"
     fields_desc = [ShortEnumField("type", None, PCO_PROTOCOL_TYPES),
                    ByteField("length", 0),
                    PacketField("PPP", None, PCO_PPP_Challenge)]
@@ -622,7 +627,7 @@ PCO_PROTOCOL_CLASSES = {
 
 def PCO_protocol_dispatcher(s):
     """Choose the correct PCO element."""
-    proto_num = orb(s[0])*256+orb(s[1])
+    proto_num = orb(s[0]) * 256 + orb(s[1])
     cls = PCO_PROTOCOL_CLASSES.get(proto_num, Raw)
     return cls(s)
 
@@ -630,20 +635,20 @@ def PCO_protocol_dispatcher(s):
 class IE_PCO(gtp.IE_Base):
     name = "IE Protocol Configuration Options"
     fields_desc = [ByteEnumField("ietype", 78, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    BitField("Extension", 0, 1),
                    BitField("SPARE", 0, 4),
                    BitField("PPP", 0, 3),
                    PacketListField("Protocols", None, PCO_protocol_dispatcher,
-                                   length_from=lambda pkt: pkt.length-1)]
+                                   length_from=lambda pkt: pkt.length - 1)]
 
 
 class IE_PAA(gtp.IE_Base):
     name = "IE PAA"
     fields_desc = [ByteEnumField("ietype", 79, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    BitField("SPARE", 0, 5),
@@ -662,7 +667,7 @@ class IE_PAA(gtp.IE_Base):
 class IE_Bearer_QoS(gtp.IE_Base):
     name = "IE Bearer Quality of Service"
     fields_desc = [ByteEnumField("ietype", 80, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    BitField("SPARE", 0, 1),
@@ -680,7 +685,7 @@ class IE_Bearer_QoS(gtp.IE_Base):
 class IE_ChargingID(gtp.IE_Base):
     name = "IE Charging ID"
     fields_desc = [ByteEnumField("ietype", 94, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    IntField("ChargingID", 0)]
@@ -689,7 +694,7 @@ class IE_ChargingID(gtp.IE_Base):
 class IE_ChargingCharacteristics(gtp.IE_Base):
     name = "IE Charging ID"
     fields_desc = [ByteEnumField("ietype", 95, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    XShortField("ChargingCharacteristric", 0)]
@@ -698,7 +703,7 @@ class IE_ChargingCharacteristics(gtp.IE_Base):
 class IE_PDN_type(gtp.IE_Base):
     name = "IE PDN Type"
     fields_desc = [ByteEnumField("ietype", 99, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    BitField("SPARE", 0, 5),
@@ -708,7 +713,7 @@ class IE_PDN_type(gtp.IE_Base):
 class IE_UE_Timezone(gtp.IE_Base):
     name = "IE UE Time zone"
     fields_desc = [ByteEnumField("ietype", 114, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    ByteField("Timezone", 0),
@@ -727,7 +732,7 @@ class IE_Port_Number(gtp.IE_Base):
 class IE_APN_Restriction(gtp.IE_Base):
     name = "IE APN Restriction"
     fields_desc = [ByteEnumField("ietype", 127, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    ByteField("APN_Restriction", 0)]
@@ -736,7 +741,7 @@ class IE_APN_Restriction(gtp.IE_Base):
 class IE_SelectionMode(gtp.IE_Base):
     name = "IE Selection Mode"
     fields_desc = [ByteEnumField("ietype", 128, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    BitField("SPARE", 0, 6),
@@ -746,7 +751,7 @@ class IE_SelectionMode(gtp.IE_Base):
 class IE_MMBR(gtp.IE_Base):
     name = "IE Max MBR/APN-AMBR (MMBR)"
     fields_desc = [ByteEnumField("ietype", 72, IEType),
-                   ShortField("length",  None),
+                   ShortField("length", None),
                    BitField("CR_flag", 0, 4),
                    BitField("instance", 0, 4),
                    IntField("uplink_rate", 0),
@@ -896,6 +901,7 @@ class GTPV2DownlinkDataNotif(GTPV2Command):
 
 class GTPV2DownlinkDataNotifAck(GTPV2Command):
     name = "GTPv2 Download Data Notification Acknowledgment"
+
 
 bind_layers(GTPHeader, GTPV2EchoRequest, gtp_type=1, T=0)
 bind_layers(GTPHeader, GTPV2EchoResponse, gtp_type=2, T=0)

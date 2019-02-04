@@ -1,7 +1,7 @@
-## This file is part of Scapy
-## Copyright (C) 2007, 2008, 2009 Arnaud Ebalard
-##               2015, 2016, 2017 Maxence Tury
-## This program is published under a GPLv2 license
+# This file is part of Scapy
+# Copyright (C) 2007, 2008, 2009 Arnaud Ebalard
+#               2015, 2016, 2017 Maxence Tury
+# This program is published under a GPLv2 license
 
 """
 TLS server automaton. This makes for a primitive TLS stack.
@@ -19,6 +19,7 @@ In order to run a server listening on tcp/4433:
 from __future__ import print_function
 import socket
 
+from scapy.packet import Raw
 from scapy.pton_ntop import inet_pton
 from scapy.utils import randstring, repr_hex
 from scapy.automaton import ATMT
@@ -26,12 +27,17 @@ from scapy.layers.tls.automaton import _TLSAutomaton
 from scapy.layers.tls.cert import PrivKeyRSA, PrivKeyECDSA
 from scapy.layers.tls.basefields import _tls_version
 from scapy.layers.tls.session import tlsSession
-from scapy.layers.tls.handshake import *
-from scapy.layers.tls.handshake_sslv2 import *
-from scapy.layers.tls.record import (TLS, TLSAlert, TLSChangeCipherSpec,
-                                     TLSApplicationData)
-from scapy.layers.tls.crypto.suites import (_tls_cipher_suites_cls,
-                                            get_usable_ciphersuites)
+from scapy.layers.tls.handshake import TLSCertificate, TLSCertificateRequest, \
+    TLSCertificateVerify, TLSClientHello, TLSClientKeyExchange, TLSFinished, \
+    TLSServerHello, TLSServerHelloDone, TLSServerKeyExchange
+from scapy.layers.tls.handshake_sslv2 import SSLv2ClientCertificate, \
+    SSLv2ClientFinished, SSLv2ClientHello, SSLv2ClientMasterKey, \
+    SSLv2RequestCertificate, SSLv2ServerFinished, SSLv2ServerHello, \
+    SSLv2ServerVerify
+from scapy.layers.tls.record import TLSAlert, TLSChangeCipherSpec, \
+    TLSApplicationData
+from scapy.layers.tls.crypto.suites import _tls_cipher_suites_cls, \
+    get_usable_ciphersuites
 
 
 class TLSServerAutomaton(_TLSAutomaton):
@@ -57,13 +63,14 @@ class TLSServerAutomaton(_TLSAutomaton):
     Once this limit has been reached, the client (if still here) is dropped,
     and we wait for a new connection.
     """
+
     def parse_args(self, server="127.0.0.1", sport=4433,
-                         mycert=None, mykey=None,
-                         preferred_ciphersuite=None,
-                         client_auth=False,
-                         is_echo_server=True,
-                         max_client_idle_time=60,
-                         **kargs):
+                   mycert=None, mykey=None,
+                   preferred_ciphersuite=None,
+                   client_auth=False,
+                   is_echo_server=True,
+                   max_client_idle_time=60,
+                   **kargs):
 
         super(TLSServerAutomaton, self).parse_args(mycert=mycert,
                                                    mykey=mykey,
@@ -74,7 +81,7 @@ class TLSServerAutomaton(_TLSAutomaton):
             else:
                 inet_pton(socket.AF_INET, server)
             tmp = socket.getaddrinfo(server, sport)
-        except:
+        except Exception:
             tmp = socket.getaddrinfo(socket.getfqdn(server), sport)
 
         self.serversocket = None
@@ -88,7 +95,6 @@ class TLSServerAutomaton(_TLSAutomaton):
         self.client_auth = client_auth
         self.is_echo_server = is_echo_server
         self.max_client_idle_time = max_client_idle_time
-
 
     def vprint_sessioninfo(self):
         if self.verbose:
@@ -104,7 +110,7 @@ class TLSServerAutomaton(_TLSAutomaton):
             self.vprint()
 
     def http_sessioninfo(self):
-        header  = "HTTP/1.1 200 OK\r\n"
+        header = "HTTP/1.1 200 OK\r\n"
         header += "Server: Scapy TLS Extension\r\n"
         header += "Content-type: text/html\r\n"
         header += "Content-length: %d\r\n\r\n"
@@ -119,15 +125,14 @@ class TLSServerAutomaton(_TLSAutomaton):
         ms = self.cur_session.master_secret
         s += "Master secret : %s\n" % repr_hex(ms)
         body = "<html><body><pre>%s</pre></body></html>\r\n\r\n" % s
-        answer = (header+body) % len(body)
+        answer = (header + body) % len(body)
         return answer
-
 
     @ATMT.state(initial=True)
     def INITIAL(self):
         self.vprint("Starting TLS server automaton.")
         self.vprint("Receiving 'stop_server' will cause a graceful exit.")
-        self.vprint("Interrupting with Ctrl-Z might leave a loose socket hanging.")
+        self.vprint("Interrupting with Ctrl-Z might leave a loose socket hanging.")  # noqa: E501
         raise self.BIND()
 
     @ATMT.state()
@@ -138,7 +143,7 @@ class TLSServerAutomaton(_TLSAutomaton):
         try:
             s.bind((self.local_ip, self.local_port))
             s.listen(1)
-        except:
+        except Exception:
             m = "Unable to bind on %s:%d!" % (self.local_ip, self.local_port)
             self.vprint()
             self.vprint(m)
@@ -175,7 +180,7 @@ class TLSServerAutomaton(_TLSAutomaton):
         self.cur_session.server_key = self.mykey
         if isinstance(self.mykey, PrivKeyRSA):
             self.cur_session.server_rsa_key = self.mykey
-        #elif isinstance(self.mykey, PrivKeyECDSA):
+        # elif isinstance(self.mykey, PrivKeyECDSA):
         #    self.cur_session.server_ecdsa_key = self.mykey
         raise self.WAITING_CLIENTFLIGHT1()
 
@@ -188,7 +193,7 @@ class TLSServerAutomaton(_TLSAutomaton):
     def RECEIVED_CLIENTFLIGHT1(self):
         pass
 
-    ########################### TLS handshake #################################
+    #                           TLS handshake                                 #
 
     @ATMT.condition(RECEIVED_CLIENTFLIGHT1, prio=1)
     def should_handle_ClientHello(self):
@@ -469,7 +474,7 @@ class TLSServerAutomaton(_TLSAutomaton):
             self.vprint("Will now act as a simple echo server.")
         raise self.WAITING_CLIENTDATA()
 
-    ####################### end of TLS handshake ##############################
+    #                       end of TLS handshake                              #
 
     @ATMT.state()
     def WAITING_CLIENTDATA(self):
@@ -493,13 +498,9 @@ class TLSServerAutomaton(_TLSAutomaton):
             print("> Received: %r" % p.data)
             recv_data = p.data
             lines = recv_data.split(b"\n")
-            stop = False
             for l in lines:
                 if l.startswith(b"stop_server"):
-                    stop = True
-                    break
-            if stop:
-                raise self.CLOSE_NOTIFY_FINAL()
+                    raise self.CLOSE_NOTIFY_FINAL()
         elif isinstance(p, TLSAlert):
             print("> Received: %r" % p)
             raise self.CLOSE_NOTIFY()
@@ -544,8 +545,8 @@ class TLSServerAutomaton(_TLSAutomaton):
         self.add_msg(TLSAlert(level=1, descr=0))
         try:
             self.flush_records()
-        except:
-            self.vprint("Could not send termination Alert, maybe the client left?")
+        except Exception:
+            self.vprint("Could not send termination Alert, maybe the client left?")  # noqa: E501
             self.buffer_out = []
         self.socket.close()
         raise self.WAITING_CLIENT()
@@ -561,14 +562,14 @@ class TLSServerAutomaton(_TLSAutomaton):
         self.add_msg(TLSAlert(level=1, descr=0))
         try:
             self.flush_records()
-        except:
-            self.vprint("Could not send termination Alert, maybe the client left?")
+        except Exception:
+            self.vprint("Could not send termination Alert, maybe the client left?")  # noqa: E501
         # We might call shutdown, but unit tests with s_client fail with this.
-        #self.socket.shutdown(1)
+        # self.socket.shutdown(1)
         self.socket.close()
         raise self.FINAL()
 
-    ########################## SSLv2 handshake ################################
+    #                          SSLv2 handshake                                #
 
     @ATMT.condition(RECEIVED_CLIENTFLIGHT1, prio=2)
     def sslv2_should_handle_ClientHello(self):
@@ -691,7 +692,7 @@ class TLSServerAutomaton(_TLSAutomaton):
         else:
             raise self.SSLv2_RECEIVED_CLIENTFINISHED()
 
-    ####################### SSLv2 client authentication #######################
+    #                       SSLv2 client authentication                       #
 
     @ATMT.condition(SSLv2_HANDLED_CLIENTFINISHED, prio=2)
     def sslv2_should_add_RequestCertificate(self):
@@ -740,11 +741,11 @@ class TLSServerAutomaton(_TLSAutomaton):
 
     @ATMT.state()
     def SSLv2_HANDLED_CLIENTCERTIFICATE(self):
-        selv.vprint("Received client certificate...")
+        self.vprint("Received client certificate...")
         # We could care about the client CA, but we don't.
         raise self.SSLv2_HANDLED_CLIENTFINISHED()
 
-    ################### end of SSLv2 client authentication ####################
+    #                   end of SSLv2 client authentication                    #
 
     @ATMT.condition(SSLv2_HANDLED_CLIENTFINISHED, prio=3)
     def sslv2_should_add_ServerFinished(self):
@@ -769,7 +770,7 @@ class TLSServerAutomaton(_TLSAutomaton):
             self.vprint("Will now act as a simple echo server.")
         raise self.SSLv2_WAITING_CLIENTDATA()
 
-    ######################## end of SSLv2 handshake ###########################
+    #                        end of SSLv2 handshake                           #
 
     @ATMT.state()
     def SSLv2_WAITING_CLIENTDATA(self):
@@ -799,19 +800,14 @@ class TLSServerAutomaton(_TLSAutomaton):
             print("> Received: %r" % p)
 
         lines = cli_data.split(b"\n")
-        stop = False
         for l in lines:
             if l.startswith(b"stop_server"):
-                stop = True
-                break
-        if stop:
-            raise self.SSLv2_CLOSE_NOTIFY_FINAL()
+                raise self.SSLv2_CLOSE_NOTIFY_FINAL()
 
-        answer = b""
         if cli_data.startswith(b"GET / HTTP/1.1"):
             p = Raw(self.http_sessioninfo())
 
-        if self.is_echo_server or recv_data.startswith(b"GET / HTTP/1.1"):
+        if self.is_echo_server or cli_data.startswith(b"GET / HTTP/1.1"):
             self.add_record(is_sslv2=True)
             self.add_msg(p)
             raise self.SSLv2_ADDED_SERVERDATA()
@@ -850,8 +846,8 @@ class TLSServerAutomaton(_TLSAutomaton):
         self.add_msg(Raw('goodbye'))
         try:
             self.flush_records()
-        except:
-            self.vprint("Could not send our goodbye. The client probably left.")
+        except Exception:
+            self.vprint("Could not send our goodbye. The client probably left.")  # noqa: E501
             self.buffer_out = []
         self.socket.close()
         raise self.WAITING_CLIENT()
@@ -871,8 +867,8 @@ class TLSServerAutomaton(_TLSAutomaton):
         self.add_msg(Raw('goodbye'))
         try:
             self.flush_records()
-        except:
-            self.vprint("Could not send our goodbye. The client probably left.")
+        except Exception:
+            self.vprint("Could not send our goodbye. The client probably left.")  # noqa: E501
         self.socket.close()
         raise self.FINAL()
 
@@ -881,4 +877,3 @@ class TLSServerAutomaton(_TLSAutomaton):
         self.vprint("Closing server socket...")
         self.serversocket.close()
         self.vprint("Ending TLS server automaton.")
-
